@@ -229,18 +229,18 @@ func (a *App) renderHeader() string {
 	phase := a.spin.View() + " " + phaseStyle.Render(a.phase)
 	focus := dimStyle.Render("focus: ") + outputStyle.Render(a.focus)
 
-	qdrantDot := anomalyStyle.Render("○ qdrant")
+	qdrantLine := anomalyStyle.Render("○ qdrant")
 	if a.snap.QdrantOK {
-		qdrantDot = statValueStyle.Render("● qdrant") + "  " +
+		qdrantLine = statValueStyle.Render("● qdrant") + "  " +
 			statStyle.Render("vectors:") + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.QdrantVectors))
 	}
 
-	stats := strings.Join([]string{
+	// two rows so neither line needs to be very wide
+	statsRow1 := strings.Join([]string{
 		statStyle.Render("nodes:")  + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Nodes)),
 		statStyle.Render("edges:")  + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Edges)),
 		statStyle.Render("anom:")   + " " + anomalyStyle.Render(fmt.Sprintf("%d", a.snap.Anomalies)),
 		statStyle.Render("cycle:")  + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Cycles)),
-		qdrantDot,
 	}, "  ")
 
 	// cycle progress bar (only when a limit is set)
@@ -257,6 +257,10 @@ func (a *App) renderHeader() string {
 		title,
 		phase+" "+focus+pbRow,
 	)
+	rightW := a.width - a.width*2/5
+	right := lipgloss.NewStyle().Width(rightW).Align(lipgloss.Right).Render(
+		lipgloss.JoinVertical(lipgloss.Right, statsRow1, qdrantLine),
+	)
 	row := lipgloss.NewStyle().
 		Width(a.width).
 		BorderBottom(true).
@@ -264,7 +268,7 @@ func (a *App) renderHeader() string {
 		Padding(0, 1).
 		Render(lipgloss.JoinHorizontal(lipgloss.Center,
 			lipgloss.NewStyle().Width(a.width*2/5).Render(left),
-			lipgloss.NewStyle().Width(a.width-a.width*2/5).Align(lipgloss.Right).Render(stats),
+			right,
 		))
 	return row
 }
