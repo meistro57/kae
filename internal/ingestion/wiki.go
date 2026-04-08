@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 )
@@ -29,7 +30,13 @@ func WikiSummary(topic string) (*WikiResult, error) {
 		"redirects":     {"1"},
 	}
 
-	resp, err := httpClient.Get(wikiAPI + "?" + params.Encode())
+	req, err := http.NewRequest("GET", wikiAPI+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("wiki request: %w", err)
+	}
+	req.Header.Set("User-Agent", "KnowledgeArchaeologyEngine/1.0 (https://github.com/meistro57/kae)")
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("wiki fetch: %w", err)
 	}

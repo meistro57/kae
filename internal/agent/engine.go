@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -73,6 +75,9 @@ type Engine struct {
 	running       bool
 	qdrantOK      bool
 	qdrantVectors int64
+
+	thinkFile *os.File
+	thinkW    *bufio.Writer
 }
 
 func NewEngine(cfg *config.Config) *Engine {
@@ -104,6 +109,16 @@ func (e *Engine) MaxCycles() int        { return e.cfg.MaxCycles }
 func (e *Engine) Report() string        { e.mu.Lock(); defer e.mu.Unlock(); return e.report.String() }
 func (e *Engine) Focus() string         { e.mu.Lock(); defer e.mu.Unlock(); return e.focus }
 
+// ThinkLogPath returns the path of the live think log file (empty if not open).
+func (e *Engine) ThinkLogPath() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.thinkFile == nil {
+		return ""
+	}
+	return e.thinkFile.Name()
+}
+
 // Start kicks off the agent loop in a goroutine
 func (e *Engine) Start() {
 	e.mu.Lock()
@@ -113,6 +128,21 @@ func (e *Engine) Start() {
 	}
 	e.running = true
 	e.mu.Unlock()
+
+	// open the live think log — named now so the UI can show the path
+	slug := slugify(e.cfg.Seed)
+	if slug == "" {
+		slug = "kae"
+	}
+	logPath := fmt.Sprintf("think_%s_%s.log", slug, time.Now().Format("20060102_150405"))
+	f, err := os.Create(logPath)
+	if err == nil {
+		e.mu.Lock()
+		e.thinkFile = f
+		e.thinkW = bufio.NewWriter(f)
+		e.mu.Unlock()
+	}
+
 	go e.run()
 }
 
@@ -139,7 +169,10 @@ func (e *Engine) run() {
 
 		e.mu.Lock()
 		e.cycle++
+		currentCycle := e.cycle
 		e.mu.Unlock()
+
+		e.writeThinkHeader(currentCycle, focus)
 
 		// Ingest → Think → Connect → Anomaly → Plan → Report
 		content := e.ingestPhase(focus)
@@ -153,6 +186,16 @@ func (e *Engine) run() {
 		// Tiny breath between cycles so the UI can render
 		time.Sleep(200 * time.Millisecond)
 	}
+
+	// flush and close the think log
+	e.mu.Lock()
+	if e.thinkW != nil {
+		e.thinkW.Flush()
+	}
+	if e.thinkFile != nil {
+		e.thinkFile.Close()
+	}
+	e.mu.Unlock()
 }
 
 func (e *Engine) chooseSeed() string {
@@ -342,6 +385,7 @@ NEXT: <single next concept>`, topic, e.graph.Summary(), semSection, contentSecti
 	for chunk := range ch {
 		switch chunk.Type {
 		case llm.ChunkThink:
+			e.writeThink(chunk.Text)
 			e.emit(Event{Phase: PhaseThink, Focus: topic, ThinkChunk: chunk.Text})
 		case llm.ChunkText:
 			output.WriteString(chunk.Text)
@@ -396,6 +440,29 @@ NEXT: <single next concept>`, topic, e.graph.Summary(), semSection, contentSecti
 		next = topic
 	}
 	return next
+}
+
+// writeThinkHeader writes a cycle separator to the think log.
+func (e *Engine) writeThinkHeader(cycle int, focus string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.thinkW == nil {
+		return
+	}
+	fmt.Fprintf(e.thinkW, "\n\n═══ Cycle %d — %s — focus: %s ═══\n\n",
+		cycle, time.Now().Format("15:04:05"), focus)
+	e.thinkW.Flush()
+}
+
+// writeThink appends a raw thinking chunk to the think log immediately.
+func (e *Engine) writeThink(chunk string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.thinkW == nil {
+		return
+	}
+	e.thinkW.WriteString(chunk)
+	e.thinkW.Flush()
 }
 
 func (e *Engine) anomalyPhase() {
