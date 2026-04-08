@@ -263,8 +263,8 @@ func (a *App) renderHeader() string {
 		BorderForeground(colorBorder).
 		Padding(0, 1).
 		Render(lipgloss.JoinHorizontal(lipgloss.Center,
-			lipgloss.NewStyle().Width(a.width/2).Render(left),
-			lipgloss.NewStyle().Width(a.width/2).Align(lipgloss.Right).Render(stats),
+			lipgloss.NewStyle().Width(a.width*2/5).Render(left),
+			lipgloss.NewStyle().Width(a.width-a.width*2/5).Align(lipgloss.Right).Render(stats),
 		))
 	return row
 }
