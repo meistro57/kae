@@ -24,7 +24,7 @@ The hypothesis: if you feed it everything and let it run unbiased, it arrives at
 
 - Go 1.22+
 - An [OpenRouter](https://openrouter.ai) API key
-- Qdrant running locally (optional — for vector memory)
+- Docker (optional — for Qdrant vector memory via `setup.sh`)
 
 ```bash
 # Install Go on WSL2/Ubuntu
@@ -42,17 +42,27 @@ go version
 # Clone or copy the project
 cd kae
 
-# Set your OpenRouter key
-export OPENROUTER_API_KEY=your_key_here
+# Run the setup script — installs Go deps, builds binary, starts Qdrant v1.17.1 via Docker
+./setup.sh
 
-# Optional: point at your Qdrant instance
-export QDRANT_URL=http://localhost:6333
+# Copy the generated .env and fill in your keys
+# OPENROUTER_API_KEY is required; the rest are optional
+```
 
-# Download dependencies
-go mod tidy
+`.env` reference:
 
-# Run
-go run .
+```env
+# Required
+OPENROUTER_API_KEY=your_key_here
+
+# Optional — Qdrant vector memory (setup.sh starts this automatically)
+QDRANT_URL=http://localhost:6333
+
+# Optional — real semantic embeddings via any OpenAI-compatible endpoint
+# Without these, KAE falls back to feature hashing (fast, no API needed)
+EMBEDDINGS_URL=https://api.openai.com
+EMBEDDINGS_KEY=your_openai_key_here
+EMBEDDINGS_MODEL=text-embedding-3-small
 ```
 
 ---
@@ -129,19 +139,24 @@ go build -o kae .
 kae/
 ├── main.go                      # Entry point, CLI flags
 ├── go.mod                       # Dependencies
+├── setup.sh                     # Start Qdrant (v1.17.1) + build binary
 ├── internal/
 │   ├── config/
-│   │   └── config.go            # Config loader (env vars)
+│   │   └── config.go            # Config loader (env vars + .env)
 │   ├── llm/
 │   │   └── client.go            # OpenRouter streaming client + R1 think-block parser
 │   ├── graph/
 │   │   └── graph.go             # Thread-safe knowledge graph (nodes, edges, anomalies)
+│   ├── embeddings/
+│   │   └── embedder.go          # Embedder interface: APIEmbedder (OpenAI-compat) or HashEmbedder fallback
+│   ├── store/
+│   │   └── qdrant.go            # Qdrant REST client — batch upsert, retry, payload indexes, hnsw_ef
 │   ├── agent/
-│   │   └── engine.go            # Core agent loop (seed→ingest→think→connect→report)
+│   │   └── engine.go            # Core agent loop + batch sync queue for Qdrant
 │   ├── ingestion/
-│   │   └── wiki.go              # Wikipedia ingestion + text chunking
+│   │   └── wiki.go              # Wikipedia / arxiv / Gutenberg ingestion
 │   └── ui/
-│       └── app.go               # Bubbletea TUI — 3-panel cinematic layout
+│       └── app.go               # Bubbletea TUI — 4-panel layout
 ```
 
 ---
@@ -179,6 +194,26 @@ You can swap either via CLI flags. The brain model is what you *watch think*. Th
 
 ---
 
+## Vector Memory (Qdrant)
+
+KAE uses Qdrant as optional persistent vector memory. When running, every concept node is embedded and stored — future cycles retrieve semantically similar nodes from previous sessions to ground the reasoning.
+
+| Setting | Detail |
+|---------|--------|
+| Version | `qdrant/qdrant:v1.17.1` (pinned) |
+| Collection | `kae_nodes` |
+| Distance | Cosine |
+| Payload indexes | `domain`, `label` (keyword, created before HNSW builds) |
+| Batch size | 64 points per upsert request |
+| Retry | 3 attempts, 100ms/300ms backoff |
+| `hnsw_ef` | `max(k×4, 64)` at query time |
+| Embedding fallback | Feature hashing (128-dim, no API needed) |
+| Embedding (configured) | Any OpenAI-compatible endpoint — default `text-embedding-3-small` (1536-dim) |
+
+Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with no degradation to the core loop.
+
+---
+
 ## Roadmap
 
 - [x] Core agent loop
@@ -188,7 +223,7 @@ You can swap either via CLI flags. The brain model is what you *watch think*. Th
 - [x] Wikipedia ingestion wired into live ingest phase
 - [x] arxiv paper ingestion
 - [x] Project Gutenberg ancient texts
-- [ ] Qdrant vector memory (semantic search across sessions)
+- [x] Qdrant vector memory — batch upsert, retry, payload indexes, configurable semantic embeddings
 - [ ] Graph persistence (resume runs)
 - [ ] Final report export to markdown/HTML
 - [ ] Anomaly scoring algorithm
@@ -210,4 +245,4 @@ You can swap either via CLI flags. The brain model is what you *watch think*. Th
 
 ---
 
-*KAE v0.1 — Built in WSL2 | Go | OpenRouter | Qdrant | Pure curiosity*
+*KAE v0.2 — Built in WSL2 | Go | OpenRouter | Qdrant v1.17.1 | Pure curiosity*

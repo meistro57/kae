@@ -60,12 +60,15 @@ type Snapshot struct {
 
 // Engine runs the knowledge archaeology loop
 type Engine struct {
-	cfg    *config.Config
-	graph  *graph.Graph
-	brain  *llm.Client // R1 — deep thinking
-	fast   *llm.Client // Gemini Flash — bulk passes
-	qdrant *store.Client
-	events chan Event
+	cfg      *config.Config
+	graph    *graph.Graph
+	brain    *llm.Client // R1 — deep thinking
+	fast     *llm.Client // Gemini Flash — bulk passes
+	qdrant   *store.Client
+	embedder embeddings.Embedder
+	events   chan Event
+	syncCh   chan *graph.Node // feeds the batch-upsert goroutine
+	done     chan struct{}    // closed when run() exits
 
 	mu            sync.Mutex
 	cycle         int
@@ -86,13 +89,17 @@ type Engine struct {
 }
 
 func NewEngine(cfg *config.Config) *Engine {
+	emb := embeddings.New(cfg.EmbeddingsURL, cfg.EmbeddingsKey, cfg.EmbeddingsModel)
 	e := &Engine{
 		cfg:           cfg,
 		graph:         graph.New(),
 		brain:         llm.NewClient(cfg.OpenRouterKey, cfg.Model),
 		fast:          llm.NewClient(cfg.OpenRouterKey, cfg.FastModel),
 		qdrant:        store.NewClient(cfg.QdrantURL),
+		embedder:      emb,
 		events:        make(chan Event, 256),
+		syncCh:        make(chan *graph.Node, 512),
+		done:          make(chan struct{}),
 		seenAnomalies: make(map[string]bool),
 		prevTopIDs:    make(map[string]bool),
 	}
@@ -101,12 +108,13 @@ func NewEngine(cfg *config.Config) *Engine {
 		if err := e.qdrant.Ping(); err != nil {
 			return
 		}
-		_ = e.qdrant.EnsureCollection(store.Collection, embeddings.Dim)
+		_ = e.qdrant.EnsureCollection(store.Collection, emb.Dim())
 		e.mu.Lock()
 		e.qdrantOK = true
 		e.mu.Unlock()
 		e.refreshQdrantStats()
 	}()
+	go e.drainSyncQueue()
 	return e
 }
 
@@ -206,6 +214,9 @@ func (e *Engine) run() {
 		e.thinkFile.Close()
 	}
 	e.mu.Unlock()
+
+	// signal batch sync queue to flush and exit
+	close(e.done)
 }
 
 func (e *Engine) chooseSeed() string {
@@ -583,20 +594,75 @@ func (e *Engine) reportPhase() {
 	e.emit(Event{Phase: PhaseReport, ReportLine: sb.String()})
 }
 
-// syncNode embeds a node and upserts it into Qdrant asynchronously.
-// Errors are silently dropped — Qdrant is best-effort.
+// syncNode enqueues a node for batch upsert into Qdrant.
+// Non-blocking — drops silently if the queue is full.
 func (e *Engine) syncNode(n *graph.Node) {
 	if !e.qdrantOK {
 		return
 	}
-	go func() {
-		vec := embeddings.Embed(n.Label + " " + n.Domain)
-		_ = e.qdrant.Upsert(store.Collection, n.ID, vec, map[string]any{
-			"label":  n.Label,
-			"domain": n.Domain,
-		})
-		e.refreshQdrantStats()
-	}()
+	select {
+	case e.syncCh <- n:
+	default:
+	}
+}
+
+// drainSyncQueue collects nodes from syncCh in batches of up to 64 (or every
+// 500 ms) and calls UpsertBatch — per Qdrant batch-upload best practices.
+func (e *Engine) drainSyncQueue() {
+	const batchSize = 64
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	batch := make([]*graph.Node, 0, batchSize)
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		pts := make([]store.Point, 0, len(batch))
+		for _, n := range batch {
+			vec, err := e.embedder.Embed(n.Label + " " + n.Domain)
+			if err != nil {
+				continue
+			}
+			pts = append(pts, store.Point{
+				ID:     n.ID,
+				Vector: vec,
+				Payload: map[string]any{
+					"label":  n.Label,
+					"domain": n.Domain,
+				},
+			})
+		}
+		batch = batch[:0]
+		if len(pts) > 0 {
+			_ = e.qdrant.UpsertBatch(store.Collection, pts)
+			e.refreshQdrantStats()
+		}
+	}
+
+	for {
+		select {
+		case n := <-e.syncCh:
+			batch = append(batch, n)
+			if len(batch) >= batchSize {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		case <-e.done:
+			// drain any remaining nodes then exit
+			for {
+				select {
+				case n := <-e.syncCh:
+					batch = append(batch, n)
+				default:
+					flush()
+					return
+				}
+			}
+		}
+	}
 }
 
 // semanticContext queries Qdrant for nodes semantically similar to topic
@@ -605,7 +671,10 @@ func (e *Engine) semanticContext(topic string) string {
 	if !e.qdrantOK {
 		return ""
 	}
-	vec := embeddings.Embed(topic)
+	vec, err := e.embedder.Embed(topic)
+	if err != nil {
+		return ""
+	}
 	labels, err := e.qdrant.Search(store.Collection, vec, 5)
 	if err != nil || len(labels) == 0 {
 		return ""

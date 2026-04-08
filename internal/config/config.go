@@ -14,6 +14,11 @@ type Config struct {
 	QdrantURL     string
 	MaxCycles     int
 	Seed          string
+	// Embeddings — optional OpenAI-compatible endpoint for semantic vectors.
+	// If unset, falls back to feature hashing.
+	EmbeddingsURL   string
+	EmbeddingsKey   string
+	EmbeddingsModel string
 }
 
 func Load() (*Config, error) {
@@ -23,10 +28,13 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("OPENROUTER_API_KEY not set")
 	}
 	return &Config{
-		OpenRouterKey: key,
-		Model:         "deepseek/deepseek-r1",
-		FastModel:     "google/gemini-2.5-flash",
-		QdrantURL:     envOr("QDRANT_URL", "http://localhost:6333"),
+		OpenRouterKey:   key,
+		Model:           "deepseek/deepseek-r1",
+		FastModel:       "google/gemini-2.5-flash",
+		QdrantURL:       envOr("QDRANT_URL", "http://localhost:6333"),
+		EmbeddingsURL:   os.Getenv("EMBEDDINGS_URL"),
+		EmbeddingsKey:   os.Getenv("EMBEDDINGS_KEY"),
+		EmbeddingsModel: envOr("EMBEDDINGS_MODEL", "text-embedding-3-small"),
 	}, nil
 }
 

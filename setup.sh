@@ -6,7 +6,7 @@ set -euo pipefail
 
 QDRANT_CONTAINER="kae-qdrant"
 QDRANT_PORT=6333
-QDRANT_IMAGE="qdrant/qdrant:latest"
+QDRANT_IMAGE="qdrant/qdrant:v1.17.1"
 
 echo "==> Checking dependencies..."
 
