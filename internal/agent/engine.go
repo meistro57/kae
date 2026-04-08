@@ -9,6 +9,7 @@ import (
 	"github.com/meistro/kae/internal/config"
 	"github.com/meistro/kae/internal/embeddings"
 	"github.com/meistro/kae/internal/graph"
+	"github.com/meistro/kae/internal/ingestion"
 	"github.com/meistro/kae/internal/llm"
 	"github.com/meistro/kae/internal/store"
 )
@@ -141,8 +142,8 @@ func (e *Engine) run() {
 		e.mu.Unlock()
 
 		// Ingest → Think → Connect → Anomaly → Plan → Report
-		e.ingestPhase(focus)
-		focus = e.thinkAndConnectPhase(focus)
+		content := e.ingestPhase(focus)
+		focus = e.thinkAndConnectPhase(focus, content)
 		e.anomalyPhase()
 		e.reportPhase()
 
@@ -174,41 +175,130 @@ consciousness, and ancient wisdom. Return ONLY the concept name, nothing else.`,
 	return seed
 }
 
-func (e *Engine) ingestPhase(topic string) {
+func (e *Engine) ingestPhase(topic string) string {
 	e.emit(Event{Phase: PhaseIngest, Focus: topic})
-	// Ingestion goroutines will be wired in next — for now we fetch Wikipedia summary
-	// via the fast model simulating what the ingestion layer will return
-	msgs := []llm.Message{{
-		Role: "user",
-		Content: fmt.Sprintf(`Give a dense, factual summary of everything known about "%s" 
+
+	// Step 1: try Wikipedia for grounded, real-world content
+	wikiText := ""
+	sources := []string{}
+	wiki, err := ingestion.WikiSummary(topic)
+	if err == nil && wiki.Extract != "" {
+		wikiText = wiki.Extract
+		sources = append(sources, wiki.URL)
+		e.emit(Event{Phase: PhaseIngest, Focus: topic,
+			OutputChunk: fmt.Sprintf("Wikipedia: %d chars on %q\n", len(wikiText), wiki.Title)})
+	} else {
+		e.emit(Event{Phase: PhaseIngest, Focus: topic,
+			OutputChunk: fmt.Sprintf("Wikipedia: no article found for %q — using model\n", topic)})
+	}
+
+	// Step 2: arxiv — pull recent academic papers on the topic
+	arxivDigest := ""
+	papers, arxivErr := ingestion.ArxivSearch(topic, 3)
+	if arxivErr == nil && len(papers) > 0 {
+		arxivDigest = ingestion.ArxivDigest(papers)
+		for _, p := range papers {
+			if p.URL != "" {
+				sources = append(sources, p.URL)
+			}
+		}
+		e.emit(Event{Phase: PhaseIngest, Focus: topic,
+			OutputChunk: fmt.Sprintf("arxiv: %d papers found\n", len(papers))})
+	} else {
+		e.emit(Event{Phase: PhaseIngest, Focus: topic,
+			OutputChunk: "arxiv: no papers found\n"})
+	}
+
+	// Step 3: Project Gutenberg — ancient and classical texts
+	gutenbergDigest := ""
+	books, gutErr := ingestion.GutenbergSearch(topic, 2)
+	if gutErr == nil && len(books) > 0 {
+		gutenbergDigest = ingestion.GutenbergDigest(books, true)
+		for _, bk := range books {
+			if bk.URL != "" {
+				sources = append(sources, bk.URL)
+			}
+		}
+		e.emit(Event{Phase: PhaseIngest, Focus: topic,
+			OutputChunk: fmt.Sprintf("Gutenberg: %d texts found\n", len(books))})
+	} else {
+		e.emit(Event{Phase: PhaseIngest, Focus: topic,
+			OutputChunk: "Gutenberg: no texts found\n"})
+	}
+
+	// Step 4: fast model supplements all sources (or generates from scratch if all failed)
+	var sourceParts []string
+	if wikiText != "" {
+		sourceParts = append(sourceParts, fmt.Sprintf("Wikipedia extract:\n%s", wikiText))
+	}
+	if arxivDigest != "" {
+		sourceParts = append(sourceParts, fmt.Sprintf("Recent academic papers:\n%s", arxivDigest))
+	}
+	if gutenbergDigest != "" {
+		sourceParts = append(sourceParts, fmt.Sprintf("Classical texts (Project Gutenberg):\n%s", gutenbergDigest))
+	}
+
+	var prompt string
+	if len(sourceParts) > 0 {
+		prompt = fmt.Sprintf(`Sources on "%s":
+
+%s
+
+Now add what these sources omit or underweight: fringe research, cross-domain
+philosophical implications, documented anomalies, and suppressed threads.
+Be dense and encyclopedic.`, topic, strings.Join(sourceParts, "\n\n"))
+	} else {
+		prompt = fmt.Sprintf(`Give a dense, factual summary of everything known about "%s"
 across physics, neuroscience, philosophy, ancient texts, and fringe research.
-Include mainstream consensus AND documented anomalies. Be encyclopedic.`, topic),
-	}}
-	summary, err := e.collectStream(e.fast, "", msgs)
+Include mainstream consensus AND documented anomalies. Be encyclopedic.`, topic)
+	}
+
+	msgs := []llm.Message{{Role: "user", Content: prompt}}
+	supplement, err := e.collectStream(e.fast, "", msgs)
 	if err != nil {
 		e.emit(Event{Phase: PhaseIngest, Focus: topic, Err: fmt.Errorf("ingest fast-model: %w", err)})
-		return
+		// if supplement failed but we have wiki, don't abort — use wiki alone
+		if wikiText == "" {
+			return ""
+		}
 	}
+
+	if len(sources) == 0 {
+		sources = []string{"fast-model-summary"}
+	}
+
 	e.mu.Lock()
 	e.sources++
 	e.mu.Unlock()
 
-	// Add a basic node for this topic
 	n := &graph.Node{
 		ID:      slugify(topic),
 		Label:   topic,
 		Domain:  "ingested",
-		Sources: []string{"fast-model-summary"},
+		Sources: sources,
 		Weight:  1.0,
 	}
 	e.graph.UpsertNode(n)
 	e.syncNode(n)
 
+	combined := wikiText
+	if arxivDigest != "" {
+		combined += "\n\n" + arxivDigest
+	}
+	if gutenbergDigest != "" {
+		combined += "\n\n" + gutenbergDigest
+	}
+	if supplement != "" {
+		combined += "\n\n" + supplement
+	}
+
 	e.emit(Event{Phase: PhaseIngest, Focus: topic,
-		OutputChunk: fmt.Sprintf("Ingested: %d chars on %q", len(summary), topic)})
+		OutputChunk: fmt.Sprintf("Ingested: %d chars on %q (wiki=%v)\n", len(combined), topic, wikiText != "")})
+
+	return combined
 }
 
-func (e *Engine) thinkAndConnectPhase(topic string) string {
+func (e *Engine) thinkAndConnectPhase(topic, content string) string {
 	e.emit(Event{Phase: PhaseThink, Focus: topic})
 
 	system := `You are an unbiased knowledge archaeologist. Your job is to find the
@@ -221,10 +311,19 @@ actually points to when you follow contradictions without flinching.`
 		semSection = fmt.Sprintf("\nSemantically related concepts already in the graph: %s\n", semCtx)
 	}
 
+	contentSection := ""
+	if content != "" {
+		excerpt := content
+		if len(excerpt) > 3000 {
+			excerpt = excerpt[:3000] + "..."
+		}
+		contentSection = fmt.Sprintf("\nIngested knowledge on this topic:\n%s\n", excerpt)
+	}
+
 	msgs := []llm.Message{{
 		Role: "user",
 		Content: fmt.Sprintf(`Current focus: "%s"
-Graph state: %s%s
+Graph state: %s%s%s
 1. What are the 3 most important connections you see from this topic to other domains?
 2. Where does mainstream consensus go SILENT or CONTRADICTORY on this topic? Only report a genuine anomaly — a real gap, suppression, or unresolved contradiction. If there is none worth flagging, write ANOMALY: none.
 3. How severe is that anomaly? Rate 0–10 (0=trivial, 10=field-breaking). Be conservative.
@@ -234,7 +333,7 @@ Format your answer as:
 CONNECTIONS: <concept1> | <concept2> | <concept3>
 ANOMALY: <description, or "none">
 ANOMALY_SCORE: <0-10>
-NEXT: <single next concept>`, topic, e.graph.Summary(), semSection),
+NEXT: <single next concept>`, topic, e.graph.Summary(), semSection, contentSection),
 	}}
 
 	// Stream R1's thinking live to the UI

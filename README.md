@@ -185,10 +185,9 @@ You can swap either via CLI flags. The brain model is what you *watch think*. Th
 - [x] OpenRouter streaming with R1 think-block parser
 - [x] Thread-safe knowledge graph
 - [x] Bubbletea TUI
-- [x] Wikipedia ingestion
-- [ ] Wire Wikipedia into live ingest phase
-- [ ] arxiv paper ingestion
-- [ ] Project Gutenberg ancient texts
+- [x] Wikipedia ingestion wired into live ingest phase
+- [x] arxiv paper ingestion
+- [x] Project Gutenberg ancient texts
 - [ ] Qdrant vector memory (semantic search across sessions)
 - [ ] Graph persistence (resume runs)
 - [ ] Final report export to markdown/HTML

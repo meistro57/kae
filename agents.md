@@ -33,12 +33,21 @@ Each cycle runs these phases in order:
 Runs once at startup. If no `-seed` flag is given, the brain model is asked to choose a foundational concept that maximally reconciles contradictions in human knowledge. Falls back to `"consciousness"` on empty response.
 
 ### 2. INGESTING
-The fast model generates a dense, encyclopedic summary of the current topic across physics, neuroscience, philosophy, ancient texts, and fringe research. A graph node is created (`domain=ingested`, `weight=1.0`) and asynchronously embedded into Qdrant.
+Three sources are queried in parallel for the current topic:
+
+1. **Wikipedia** — intro extract; URL stored as a node source
+2. **arxiv** — top 3 papers by relevance; abstracts + URLs stored
+3. **Project Gutenberg** — up to 2 classical/ancient texts via Gutendex; metadata + excerpt stored
+
+All three are then passed to the fast model, which supplements with what they omit: fringe research, ancient wisdom traditions, cross-domain philosophical implications, and documented anomalies. If all external sources fail, the fast model generates a summary from scratch.
+
+A graph node is created (`domain=ingested`, `weight=1.0`) and asynchronously embedded into Qdrant. All source URLs are stored on the node.
 
 ### 3. THINKING
 The brain model (R1) receives:
 - Current topic and graph summary
 - Semantically related concepts already in Qdrant (if available)
+- Ingested knowledge text from the current cycle (up to 3000 chars of Wikipedia + model supplement)
 
 R1's `<think>` blocks are streamed live to the UI thinking panel. The model is prompted to return a structured response:
 
