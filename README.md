@@ -3,6 +3,7 @@
 > *An autonomous agent that ingests human knowledge, follows contradictions without flinching, and builds a model of what the data actually points to — not what consensus says.*
 
 ---
+<img width="1913" height="1272" alt="image" src="https://github.com/user-attachments/assets/9c200382-3302-4c0b-ab67-263107dd8c50" />
 
 ## What It Does
 
