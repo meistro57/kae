@@ -258,9 +258,8 @@ func (a *App) renderHeader() string {
 		phase+" "+focus+pbRow,
 	)
 	rightW := a.width - a.width*2/5
-	right := lipgloss.NewStyle().Width(rightW).Align(lipgloss.Right).Render(
-		lipgloss.JoinVertical(lipgloss.Right, statsRow1, qdrantLine),
-	)
+	right := lipgloss.NewStyle().Width(rightW).Align(lipgloss.Right).
+		Render(statsRow1 + "\n" + qdrantLine)
 	row := lipgloss.NewStyle().
 		Width(a.width).
 		BorderBottom(true).
