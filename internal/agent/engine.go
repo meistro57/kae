@@ -148,6 +148,9 @@ func (e *Engine) Start() {
 		e.thinkFile = f
 		e.thinkW = bufio.NewWriter(f)
 		e.mu.Unlock()
+		// write opening header so the file is non-empty immediately
+		e.writeThink(fmt.Sprintf("KAE Think Log — %s\nmodel: %s\n",
+			time.Now().Format(time.RFC3339), e.cfg.Model))
 	}
 
 	go e.run()
@@ -399,6 +402,7 @@ NEXT: <single next concept>`, topic, e.graph.Summary(), semSection, contentSecti
 			e.emit(Event{Phase: PhaseThink, Focus: topic, ThinkChunk: chunk.Text})
 		case llm.ChunkText:
 			output.WriteString(chunk.Text)
+			e.writeThink(chunk.Text) // also log output — reasoning field may be empty
 			e.emit(Event{Phase: PhaseConnect, Focus: topic, OutputChunk: chunk.Text})
 		case llm.ChunkError:
 			e.emit(Event{Err: chunk.Err})
