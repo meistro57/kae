@@ -252,21 +252,24 @@ func (e *Engine) ingestPhase(topic string) string {
 			OutputChunk: "arxiv: no papers found\n"})
 	}
 
-	// Step 3: Project Gutenberg — ancient and classical texts
+	// Step 3: Project Gutenberg — translate topic to a classical author/text search first
 	gutenbergDigest := ""
-	books, gutErr := ingestion.GutenbergSearch(topic, 2)
-	if gutErr == nil && len(books) > 0 {
-		gutenbergDigest = ingestion.GutenbergDigest(books, true)
-		for _, bk := range books {
-			if bk.URL != "" {
-				sources = append(sources, bk.URL)
+	gutQuery := e.gutenbergQuery(topic)
+	if gutQuery != "" {
+		books, gutErr := ingestion.GutenbergSearch(gutQuery, 2)
+		if gutErr == nil && len(books) > 0 {
+			gutenbergDigest = ingestion.GutenbergDigest(books, true)
+			for _, bk := range books {
+				if bk.URL != "" {
+					sources = append(sources, bk.URL)
+				}
 			}
+			e.emit(Event{Phase: PhaseIngest, Focus: topic,
+				OutputChunk: fmt.Sprintf("Gutenberg: %d texts found (query: %q)\n", len(books), gutQuery)})
+		} else {
+			e.emit(Event{Phase: PhaseIngest, Focus: topic,
+				OutputChunk: fmt.Sprintf("Gutenberg: no texts found for %q\n", gutQuery)})
 		}
-		e.emit(Event{Phase: PhaseIngest, Focus: topic,
-			OutputChunk: fmt.Sprintf("Gutenberg: %d texts found\n", len(books))})
-	} else {
-		e.emit(Event{Phase: PhaseIngest, Focus: topic,
-			OutputChunk: "Gutenberg: no texts found\n"})
 	}
 
 	// Step 4: fast model supplements all sources (or generates from scratch if all failed)
@@ -440,6 +443,33 @@ NEXT: <single next concept>`, topic, e.graph.Summary(), semSection, contentSecti
 		next = topic
 	}
 	return next
+}
+
+// gutenbergQuery asks the fast model to map an abstract concept to a
+// Project Gutenberg-searchable author name or text title.
+// Returns empty string if no relevant classical text exists.
+func (e *Engine) gutenbergQuery(topic string) string {
+	msgs := []llm.Message{{
+		Role: "user",
+		Content: fmt.Sprintf(`Project Gutenberg contains classical and ancient texts (pre-1930s).
+Given the concept "%s", name ONE author or ONE text title from Gutenberg that is most
+directly relevant — someone like Plato, Darwin, Kant, William James, Nietzsche, etc.
+
+If no classical Gutenberg text is meaningfully relevant, reply with: NONE
+
+Reply with ONLY the author name or text title. Nothing else.`, topic),
+	}}
+	result, err := e.collectStream(e.fast, "", msgs)
+	if err != nil {
+		return ""
+	}
+	q := strings.TrimSpace(result)
+	if q == "" || strings.EqualFold(q, "none") {
+		return ""
+	}
+	// strip any leading/trailing punctuation the model might add
+	q = strings.Trim(q, `"'.`)
+	return q
 }
 
 // writeThinkHeader writes a cycle separator to the think log.
