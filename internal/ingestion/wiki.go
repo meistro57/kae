@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"strings"
 )
@@ -30,7 +29,7 @@ func WikiSummary(topic string) (*WikiResult, error) {
 		"redirects":     {"1"},
 	}
 
-	resp, err := http.Get(wikiAPI + "?" + params.Encode())
+	resp, err := httpClient.Get(wikiAPI + "?" + params.Encode())
 	if err != nil {
 		return nil, fmt.Errorf("wiki fetch: %w", err)
 	}
