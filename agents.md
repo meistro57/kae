@@ -19,7 +19,7 @@ seed → [ ingest → think → connect → anomaly scan → report ] × N cycle
 | Role | Default | Flag | Purpose |
 |------|---------|------|---------|
 | **brain** | `deepseek/deepseek-r1` | `-model` | Deep reasoning, connection finding, anomaly detection |
-| **fast** | `google/gemini-flash-1.5-8b` | `-fast` | Bulk ingestion summaries |
+| **fast** | `google/gemini-2.5-flash` | `-fast` | Bulk ingestion summaries and supplementation |
 
 Both route through OpenRouter (`OPENROUTER_API_KEY`).
 
@@ -33,27 +33,34 @@ Each cycle runs these phases in order:
 Runs once at startup. If no `-seed` flag is given, the brain model is asked to choose a foundational concept that maximally reconciles contradictions in human knowledge. Falls back to `"consciousness"` on empty response.
 
 ### 2. INGESTING
-Three sources are queried in parallel for the current topic:
+Three external sources are queried for the current topic:
 
-1. **Wikipedia** — intro extract; URL stored as a node source
-2. **arxiv** — top 3 papers by relevance; abstracts + URLs stored
-3. **Project Gutenberg** — up to 2 classical/ancient texts via Gutendex; metadata + excerpt stored
+| Source | Implementation | What it provides |
+|--------|---------------|-----------------|
+| **Wikipedia** | `ingestion.WikiSummary` | Plain-text intro extract; real URL stored as node source |
+| **arxiv** | `ingestion.ArxivSearch` | Top 3 papers by relevance; abstracts + URLs stored |
+| **Project Gutenberg** | `ingestion.GutenbergSearch` | Up to 2 classical/ancient texts via Gutendex; metadata + excerpt stored |
 
-All three are then passed to the fast model, which supplements with what they omit: fringe research, ancient wisdom traditions, cross-domain philosophical implications, and documented anomalies. If all external sources fail, the fast model generates a summary from scratch.
+All three run sequentially. Any source that fails is silently skipped — the engine never aborts on a missing source.
 
-A graph node is created (`domain=ingested`, `weight=1.0`) and asynchronously embedded into Qdrant. All source URLs are stored on the node.
+The fast model is then given all available source material and asked to supplement with what they omit or underweight: fringe research, ancient wisdom traditions, cross-domain philosophical implications, documented anomalies, and suppressed threads. If all external sources fail, the fast model generates a summary from scratch.
+
+The combined content is returned and passed into the THINKING phase. All source URLs are stored on the graph node (`domain=ingested`, `weight=1.0`) and asynchronously embedded into Qdrant.
+
+**HTTP:** All ingestion sources share a single `*http.Client` with a 15-second timeout (`internal/ingestion/client.go`). No source can stall the engine.
 
 ### 3. THINKING
 The brain model (R1) receives:
 - Current topic and graph summary
 - Semantically related concepts already in Qdrant (if available)
-- Ingested knowledge text from the current cycle (up to 3000 chars of Wikipedia + model supplement)
+- Ingested knowledge text from the current cycle (up to 3000 chars of Wikipedia + arxiv abstracts + Gutenberg excerpt + model supplement)
 
 R1's `<think>` blocks are streamed live to the UI thinking panel. The model is prompted to return a structured response:
 
 ```
 CONNECTIONS: <concept1> | <concept2> | <concept3>
-ANOMALY: <where consensus fails>
+ANOMALY: <where consensus fails, or "none">
+ANOMALY_SCORE: <0-10>
 NEXT: <next concept to research>
 ```
 
@@ -61,14 +68,14 @@ NEXT: <next concept to research>
 The structured response is parsed and applied to the graph:
 - Each connection becomes an `inferred` node (weight 0.5)
 - Edges are created (`connects_to`, confidence 0.7) — both endpoint node weights increase by the confidence value
-- If an anomaly is detected, a special node is created (`[ANOMALY] {topic}`, weight 2.0, `anomaly=true`)
+- Anomaly nodes are created only when R1 rates the anomaly ≥ 7/10 (`[ANOMALY] {description}`, weight scaled from score, `anomaly=true`)
 - All new nodes are asynchronously embedded and stored in Qdrant
 
 ### 5. ANOMALY SCAN
 Queries the graph for all nodes flagged `anomaly=true` and emits the count to the UI.
 
 ### 6. REPORT
-Generates a markdown summary for the cycle: timestamp, graph stats, and the top 5 nodes by weight (anomaly nodes marked with ⚠). Appended to the live report panel.
+Generates a markdown summary for the cycle: timestamp, graph stats, and the top 5 nodes by weight (anomaly nodes marked with ⚠). Appended to the live report panel and the in-memory report string.
 
 ---
 
@@ -81,14 +88,25 @@ In-memory, thread-safe. No persistence between runs (Qdrant provides cross-run v
 **Edges** — `{From, To, Relation, Confidence}`
 
 **Weight accumulation:**
-- Node created: initial weight from domain (`ingested=1.0`, `inferred=0.5`, `anomaly=2.0`)
+- Node created: initial weight from domain (`ingested=1.0`, `inferred=0.5`, anomaly weight scaled from score)
 - Node re-encountered: weight accumulates additively
 - Edge added: both endpoint nodes gain `+confidence`
 
 **Domains:**
-- `ingested` — directly researched topic
+- `ingested` — directly researched topic (real source URLs in `Sources[]`)
 - `inferred` — connection identified by R1
-- `anomaly` — consensus gap flagged by R1
+- `anomaly` — consensus gap flagged by R1 (score ≥ 7/10)
+
+---
+
+## Ingestion Package (`internal/ingestion/`)
+
+| File | Purpose |
+|------|---------|
+| `client.go` | Shared `*http.Client` with 15s timeout |
+| `wiki.go` | `WikiSummary(topic)` → Wikipedia API, returns extract + URL |
+| `arxiv.go` | `ArxivSearch(topic, n)` → arxiv Atom API, returns `[]ArxivResult`; `ArxivDigest()` formats for prompts |
+| `gutenberg.go` | `GutenbergSearch(topic, n)` → Gutendex JSON API, returns `[]GutenbergResult`; `GutenbergDigest(withExcerpts)` fetches text excerpts and formats for prompts |
 
 ---
 
@@ -126,14 +144,14 @@ Engine (goroutine)
   View() → terminal panels
 ```
 
-Events are dropped (not blocked) if the channel is full — the UI is never allowed to stall the agent.
+Events are dropped (not blocked) if the channel is full — the UI is never allowed to stall the engine.
 
 ---
 
 ## Stopping
 
 - **`-cycles N`** — stop after N cycles (0 = run until killed)
-- **`q` / `Ctrl+C`** — graceful quit from the UI
+- **`q` / `Ctrl+C`** — graceful quit from the UI; report saves automatically
 
 ---
 
