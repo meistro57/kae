@@ -78,16 +78,23 @@ type Engine struct {
 
 	thinkFile *os.File
 	thinkW    *bufio.Writer
+
+	// report state
+	seenAnomalies map[string]bool   // anomaly node IDs already written in full
+	prevTopIDs    map[string]bool   // top-5 node IDs from last cycle (for ★ new marker)
+	nextFocus     string            // next concept chosen by R1 (shown at end of each cycle)
 }
 
 func NewEngine(cfg *config.Config) *Engine {
 	e := &Engine{
-		cfg:    cfg,
-		graph:  graph.New(),
-		brain:  llm.NewClient(cfg.OpenRouterKey, cfg.Model),
-		fast:   llm.NewClient(cfg.OpenRouterKey, cfg.FastModel),
-		qdrant: store.NewClient(cfg.QdrantURL),
-		events: make(chan Event, 256),
+		cfg:           cfg,
+		graph:         graph.New(),
+		brain:         llm.NewClient(cfg.OpenRouterKey, cfg.Model),
+		fast:          llm.NewClient(cfg.OpenRouterKey, cfg.FastModel),
+		qdrant:        store.NewClient(cfg.QdrantURL),
+		events:        make(chan Event, 256),
+		seenAnomalies: make(map[string]bool),
+		prevTopIDs:    make(map[string]bool),
 	}
 	// best-effort: init Qdrant collection
 	go func() {
@@ -442,6 +449,9 @@ NEXT: <single next concept>`, topic, e.graph.Summary(), semSection, contentSecti
 	if next == "" {
 		next = topic
 	}
+	e.mu.Lock()
+	e.nextFocus = next
+	e.mu.Unlock()
 	return next
 }
 
@@ -504,21 +514,66 @@ func (e *Engine) anomalyPhase() {
 
 func (e *Engine) reportPhase() {
 	e.emit(Event{Phase: PhaseReport})
+
+	e.mu.Lock()
+	cycle      := e.cycle
+	nextFocus  := e.nextFocus
+	e.mu.Unlock()
+
 	top := e.graph.TopNodes(5)
+
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("\n## Cycle %d — %s\n", e.cycle, time.Now().Format("15:04:05")))
+	sb.WriteString(fmt.Sprintf("\n## Cycle %d — %s\n", cycle, time.Now().Format("15:04:05")))
 	sb.WriteString(fmt.Sprintf("**Graph:** %s\n\n", e.graph.Summary()))
 	sb.WriteString("**Emergent concepts:**\n")
+
+	newTopIDs := make(map[string]bool, len(top))
 	for _, n := range top {
-		anomalyFlag := ""
-		if n.Anomaly {
-			anomalyFlag = " ⚠"
+		newTopIDs[n.ID] = true
+
+		score := e.graph.NodeScore(n.ID)
+
+		// ★ marker for concepts appearing in top-5 for the first time
+		newMarker := ""
+		e.mu.Lock()
+		isNew := !e.prevTopIDs[n.ID]
+		e.mu.Unlock()
+		if isNew {
+			newMarker = " ★"
 		}
-		sb.WriteString(fmt.Sprintf("- %s (weight: %.1f)%s\n", n.Label, n.Weight, anomalyFlag))
+
+		if n.Anomaly {
+			e.mu.Lock()
+			seen := e.seenAnomalies[n.ID]
+			e.mu.Unlock()
+
+			if !seen {
+				// first appearance — write full anomaly text
+				sb.WriteString(fmt.Sprintf("- %s (score: %.1f) ⚠%s\n", n.Label, score, newMarker))
+				e.mu.Lock()
+				e.seenAnomalies[n.ID] = true
+				e.mu.Unlock()
+			} else {
+				// subsequent appearances — truncate to keep the report readable
+				label := n.Label
+				if len(label) > 80 {
+					label = label[:80] + "…"
+				}
+				sb.WriteString(fmt.Sprintf("- %s (score: %.1f) ⚠\n", label, score))
+			}
+		} else {
+			sb.WriteString(fmt.Sprintf("- %s (score: %.1f)%s\n", n.Label, score, newMarker))
+		}
+	}
+
+	if nextFocus != "" {
+		sb.WriteString(fmt.Sprintf("\n**Next focus:** %s\n", nextFocus))
 	}
 
 	e.mu.Lock()
 	e.report.WriteString(sb.String())
+	// update prevTopIDs for next cycle's ★ comparison
+	e.prevTopIDs = newTopIDs
 	e.mu.Unlock()
 
 	e.emit(Event{Phase: PhaseReport, ReportLine: sb.String()})
@@ -590,7 +645,7 @@ func (e *Engine) snapshot() Snapshot {
 	weights := make([]float64, len(top))
 	for i, n := range top {
 		labels[i]  = n.Label
-		weights[i] = n.Weight
+		weights[i] = e.graph.NodeScore(n.ID)
 	}
 
 	return Snapshot{
@@ -606,7 +661,8 @@ func (e *Engine) snapshot() Snapshot {
 	}
 }
 
-// collectStream runs a stream and returns the full text output (no think blocks).
+// collectStream runs a stream and returns the full text output.
+// Think chunks are written to the think log as they arrive.
 // Returns the first error encountered, if any.
 func (e *Engine) collectStream(client *llm.Client, system string, msgs []llm.Message) (string, error) {
 	var sb strings.Builder
@@ -615,6 +671,8 @@ func (e *Engine) collectStream(client *llm.Client, system string, msgs []llm.Mes
 		switch chunk.Type {
 		case llm.ChunkText:
 			sb.WriteString(chunk.Text)
+		case llm.ChunkThink:
+			e.writeThink(chunk.Text)
 		case llm.ChunkError:
 			if firstErr == nil {
 				firstErr = chunk.Err

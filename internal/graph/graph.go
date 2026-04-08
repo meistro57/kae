@@ -91,6 +91,13 @@ func (g *Graph) AnomalyCount() int {
 	return n
 }
 
+// score returns a node's composite ranking score.
+// Combines accumulated weight with degree (edge count) so concepts that
+// are repeatedly connected across many cycles rise above one-time mentions.
+func (g *Graph) score(n *Node) float64 {
+	return n.Weight + float64(len(g.adj[n.ID]))*0.7
+}
+
 func (g *Graph) TopNodes(n int) []*Node {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -98,11 +105,24 @@ func (g *Graph) TopNodes(n int) []*Node {
 	for _, node := range g.nodes {
 		list = append(list, node)
 	}
-	sort.Slice(list, func(i, j int) bool { return list[i].Weight > list[j].Weight })
+	sort.Slice(list, func(i, j int) bool {
+		return g.score(list[i]) > g.score(list[j])
+	})
 	if n > len(list) {
 		n = len(list)
 	}
 	return list[:n]
+}
+
+// NodeScore returns the composite score for a node ID (0 if not found).
+func (g *Graph) NodeScore(id string) float64 {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	n, ok := g.nodes[id]
+	if !ok {
+		return 0
+	}
+	return g.score(n)
 }
 
 func (g *Graph) AnomalyNodes() []*Node {
