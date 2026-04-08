@@ -229,17 +229,17 @@ func (a *App) renderHeader() string {
 	phase := a.spin.View() + " " + phaseStyle.Render(a.phase)
 	focus := dimStyle.Render("focus: ") + outputStyle.Render(a.focus)
 
-	qdrantDot := anomalyStyle.Render("○ qdrant offline")
+	qdrantDot := anomalyStyle.Render("○ qdrant")
 	if a.snap.QdrantOK {
 		qdrantDot = statValueStyle.Render("● qdrant") + "  " +
 			statStyle.Render("vectors:") + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.QdrantVectors))
 	}
 
 	stats := strings.Join([]string{
-		statStyle.Render("nodes:")     + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Nodes)),
-		statStyle.Render("edges:")     + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Edges)),
-		statStyle.Render("anomalies:") + " " + anomalyStyle.Render(fmt.Sprintf("%d", a.snap.Anomalies)),
-		statStyle.Render("cycle:")     + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Cycles)),
+		statStyle.Render("nodes:")  + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Nodes)),
+		statStyle.Render("edges:")  + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Edges)),
+		statStyle.Render("anom:")   + " " + anomalyStyle.Render(fmt.Sprintf("%d", a.snap.Anomalies)),
+		statStyle.Render("cycle:")  + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Cycles)),
 		qdrantDot,
 	}, "  ")
 
