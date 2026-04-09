@@ -4,15 +4,20 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	"github.com/meistro/kae/internal/scoring"
 )
 
 type Node struct {
-	ID      string
-	Label   string
-	Domain  string
-	Sources []string
-	Weight  float64
-	Anomaly bool // consensus gap detected
+	ID                 string
+	Label              string
+	Domain             string
+	Sources            []string
+	Weight             float64
+	Anomaly            bool
+	Notes              string
+	Vector             []float32
+	ContradictionScore *scoring.ContradictionScore
 }
 
 type Edge struct {
@@ -20,6 +25,7 @@ type Edge struct {
 	To         string
 	Relation   string
 	Confidence float64
+	Citation   string // source URLs that support this edge
 }
 
 type Graph struct {
@@ -45,6 +51,15 @@ func (g *Graph) UpsertNode(n *Node) {
 		ex.Sources = append(ex.Sources, n.Sources...)
 		if n.Anomaly {
 			ex.Anomaly = true
+		}
+		if n.Notes != "" {
+			ex.Notes = n.Notes
+		}
+		if n.ContradictionScore != nil {
+			ex.ContradictionScore = n.ContradictionScore
+		}
+		if len(n.Vector) > 0 {
+			ex.Vector = n.Vector
 		}
 		return
 	}
@@ -91,13 +106,6 @@ func (g *Graph) AnomalyCount() int {
 	return n
 }
 
-// score returns a node's composite ranking score.
-// Combines accumulated weight with degree (edge count) so concepts that
-// are repeatedly connected across many cycles rise above one-time mentions.
-func (g *Graph) score(n *Node) float64 {
-	return n.Weight + float64(len(g.adj[n.ID]))*0.7
-}
-
 func (g *Graph) TopNodes(n int) []*Node {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -106,23 +114,12 @@ func (g *Graph) TopNodes(n int) []*Node {
 		list = append(list, node)
 	}
 	sort.Slice(list, func(i, j int) bool {
-		return g.score(list[i]) > g.score(list[j])
+		return list[i].Weight > list[j].Weight
 	})
 	if n > len(list) {
 		n = len(list)
 	}
 	return list[:n]
-}
-
-// NodeScore returns the composite score for a node ID (0 if not found).
-func (g *Graph) NodeScore(id string) float64 {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	n, ok := g.nodes[id]
-	if !ok {
-		return 0
-	}
-	return g.score(n)
 }
 
 func (g *Graph) AnomalyNodes() []*Node {
@@ -135,6 +132,17 @@ func (g *Graph) AnomalyNodes() []*Node {
 		}
 	}
 	return result
+}
+
+// AllNodes returns all nodes — used for cross-run convergence export
+func (g *Graph) AllNodes() []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	list := make([]*Node, 0, len(g.nodes))
+	for _, n := range g.nodes {
+		list = append(list, n)
+	}
+	return list
 }
 
 func (g *Graph) Summary() string {

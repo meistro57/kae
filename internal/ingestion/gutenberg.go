@@ -1,44 +1,42 @@
 package ingestion
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
+	"encoding/json"
 )
 
-const (
-	gutendexAPI    = "https://gutendex.com/books"
-	gutenbergBase  = "https://www.gutenberg.org/ebooks"
-	excerptBytes   = 4096 // max bytes to fetch from a raw text file
-	gutenbergHeaderEnd = "*** START OF" // standard Gutenberg header delimiter
-)
+const gutenbergAPI = "https://gutendex.com/books"
 
-// GutenbergResult holds metadata for a single Project Gutenberg book.
-type GutenbergResult struct {
+// GutenbergBook is a text from Project Gutenberg
+type GutenbergBook struct {
 	ID       int
 	Title    string
 	Authors  []string
 	Subjects []string
-	URL      string // canonical Gutenberg ebook page
-	TextURL  string // direct plain-text URL (may be empty)
+	TextURL  string
+	Language string
 }
 
-// GutenbergSearch queries the Gutendex API and returns up to maxResults books for topic.
-func GutenbergSearch(topic string, maxResults int) ([]GutenbergResult, error) {
+// GutenbergSearch finds books by subject/keyword
+func GutenbergSearch(query string, maxResults int) ([]*GutenbergBook, error) {
 	params := url.Values{
-		"search": {topic},
+		"search":    {query},
+		"languages": {"en"},
 	}
 
-	resp, err := httpClient.Get(gutendexAPI + "?" + params.Encode())
+	resp, err := http.Get(gutenbergAPI + "?" + params.Encode())
 	if err != nil {
 		return nil, fmt.Errorf("gutenberg fetch: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("gutenberg: HTTP %d", resp.StatusCode)
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 
 	var result struct {
@@ -48,117 +46,127 @@ func GutenbergSearch(topic string, maxResults int) ([]GutenbergResult, error) {
 			Authors []struct {
 				Name string `json:"name"`
 			} `json:"authors"`
-			Subjects []string          `json:"subjects"`
-			Formats  map[string]string `json:"formats"`
+			Subjects  []string          `json:"subjects"`
+			Formats   map[string]string `json:"formats"`
+			Languages []string          `json:"languages"`
 		} `json:"results"`
 	}
 
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
 	if err := json.Unmarshal(b, &result); err != nil {
 		return nil, fmt.Errorf("gutenberg parse: %w", err)
 	}
 
-	out := make([]GutenbergResult, 0, maxResults)
+	books := make([]*GutenbergBook, 0)
 	for _, r := range result.Results {
-		if len(out) >= maxResults {
+		if len(books) >= maxResults {
 			break
 		}
 
-		g := GutenbergResult{
-			ID:    r.ID,
-			Title: r.Title,
-			URL:   fmt.Sprintf("%s/%d", gutenbergBase, r.ID),
-		}
-
-		for _, a := range r.Authors {
-			g.Authors = append(g.Authors, a.Name)
-		}
-		g.Subjects = r.Subjects
-
-		// pick the best plain-text URL: prefer UTF-8, then ASCII
-		for _, mime := range []string{
-			"text/plain; charset=utf-8",
-			"text/plain; charset=us-ascii",
-			"text/plain",
-		} {
-			if u, ok := r.Formats[mime]; ok {
-				g.TextURL = u
+		// Find plain text URL
+		textURL := ""
+		for format, u := range r.Formats {
+			if strings.Contains(format, "text/plain") {
+				textURL = u
 				break
 			}
 		}
+		if textURL == "" {
+			continue
+		}
 
-		out = append(out, g)
+		book := &GutenbergBook{
+			ID:       r.ID,
+			Title:    r.Title,
+			Subjects: r.Subjects,
+			TextURL:  textURL,
+		}
+		for _, a := range r.Authors {
+			book.Authors = append(book.Authors, a.Name)
+		}
+		if len(r.Languages) > 0 {
+			book.Language = r.Languages[0]
+		}
+		books = append(books, book)
 	}
 
-	return out, nil
+	return books, nil
 }
 
-// GutenbergExcerpt fetches a short excerpt from a Gutenberg plain-text file,
-// stripping the standard boilerplate header. Returns empty string on any error.
-func GutenbergExcerpt(textURL string) string {
-	if textURL == "" {
-		return ""
-	}
-
-	resp, err := httpClient.Get(textURL)
+// FetchBookText downloads and returns the first N words of a book
+func FetchBookText(book *GutenbergBook, maxWords int) (string, error) {
+	resp, err := http.Get(book.TextURL)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("fetch book %d: %w", book.ID, err)
 	}
 	defer resp.Body.Close()
 
-	raw := make([]byte, excerptBytes*3) // fetch extra to account for the header
-	n, _ := io.ReadFull(resp.Body, raw)
-	text := string(raw[:n])
-
-	// strip everything up to and including the START marker
-	if idx := strings.Index(text, gutenbergHeaderEnd); idx != -1 {
-		// advance past the marker line
-		rest := text[idx:]
-		if nl := strings.Index(rest, "\n"); nl != -1 {
-			text = rest[nl+1:]
-		}
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
 	}
 
-	text = strings.TrimSpace(text)
-	if len(text) > excerptBytes {
-		text = text[:excerptBytes] + "..."
+	text := string(b)
+
+	// Strip Gutenberg header/footer boilerplate
+	text = stripGutenbergBoilerplate(text)
+
+	// Truncate to maxWords
+	words := strings.Fields(text)
+	if len(words) > maxWords {
+		words = words[:maxWords]
 	}
-	return text
+
+	return strings.Join(words, " "), nil
 }
 
-// GutenbergDigest returns a concise string of book metadata plus optional excerpts,
-// suitable for injection into an LLM prompt.
-func GutenbergDigest(results []GutenbergResult, withExcerpts bool) string {
-	if len(results) == 0 {
-		return ""
-	}
-	var sb strings.Builder
-	for i, r := range results {
-		sb.WriteString(fmt.Sprintf("[Gutenberg %d] %s", i+1, r.Title))
-		if len(r.Authors) > 0 {
-			sb.WriteString(fmt.Sprintf(" — %s", strings.Join(r.Authors, ", ")))
-		}
-		sb.WriteString("\n")
-		if len(r.Subjects) > 0 {
-			// cap subjects to avoid noise
-			subjects := r.Subjects
-			if len(subjects) > 5 {
-				subjects = subjects[:5]
-			}
-			sb.WriteString(fmt.Sprintf("Subjects: %s\n", strings.Join(subjects, "; ")))
-		}
-		sb.WriteString(fmt.Sprintf("URL: %s\n", r.URL))
+// KAEGutenbergTopics are the most archaeologically relevant Gutenberg search terms
+var KAEGutenbergTopics = []string{
+	"consciousness soul",
+	"hermetic philosophy",
+	"ancient cosmology",
+	"vedic philosophy",
+	"natural philosophy",
+	"alchemy",
+	"sacred geometry",
+	"mystery schools",
+}
 
-		if withExcerpts && r.TextURL != "" {
-			excerpt := GutenbergExcerpt(r.TextURL)
-			if excerpt != "" {
-				sb.WriteString(fmt.Sprintf("Excerpt:\n%s\n", excerpt))
+func stripGutenbergBoilerplate(text string) string {
+	// Find start marker
+	startMarkers := []string{
+		"*** START OF THE PROJECT GUTENBERG",
+		"*** START OF THIS PROJECT GUTENBERG",
+		"*END*THE SMALL PRINT",
+	}
+	for _, marker := range startMarkers {
+		if idx := strings.Index(text, marker); idx >= 0 {
+			// Find end of the marker line
+			lineEnd := strings.Index(text[idx:], "\n")
+			if lineEnd >= 0 {
+				text = text[idx+lineEnd+1:]
 			}
 		}
-		sb.WriteString("\n")
 	}
-	return strings.TrimSpace(sb.String())
+
+	// Find end marker
+	endMarkers := []string{
+		"*** END OF THE PROJECT GUTENBERG",
+		"*** END OF THIS PROJECT GUTENBERG",
+		"End of the Project Gutenberg",
+	}
+	for _, marker := range endMarkers {
+		if idx := strings.Index(text, marker); idx >= 0 {
+			text = text[:idx]
+		}
+	}
+
+	return strings.TrimSpace(text)
+}
+
+// BookToChunks splits book text into chunks with metadata header
+func BookToChunks(book *GutenbergBook, text string) []string {
+	header := fmt.Sprintf("From: %s by %s\n\n",
+		book.Title, strings.Join(book.Authors, ", "))
+	full := header + text
+	return Chunk(full, 300, 50)
 }

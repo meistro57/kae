@@ -4,40 +4,37 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
-const arxivAPI = "https://export.arxiv.org/api/query"
+const arxivAPI = "http://export.arxiv.org/api/query"
 
-// ArxivResult holds a single paper's relevant fields.
-type ArxivResult struct {
+// ArxivPaper is a single paper from arxiv
+type ArxivPaper struct {
+	ID       string
 	Title    string
 	Abstract string
 	Authors  []string
 	URL      string
-	Published time.Time
+	Category string
 }
 
-// ArxivSearch queries the arxiv API and returns up to maxResults papers for topic.
-func ArxivSearch(topic string, maxResults int) ([]ArxivResult, error) {
+// ArxivSearch fetches papers related to a topic
+func ArxivSearch(topic string, maxResults int) ([]*ArxivPaper, error) {
 	params := url.Values{
 		"search_query": {fmt.Sprintf("all:%s", topic)},
+		"start":        {"0"},
 		"max_results":  {fmt.Sprintf("%d", maxResults)},
 		"sortBy":       {"relevance"},
-		"sortOrder":    {"descending"},
 	}
 
-	resp, err := httpClient.Get(arxivAPI + "?" + params.Encode())
+	resp, err := http.Get(arxivAPI + "?" + params.Encode())
 	if err != nil {
 		return nil, fmt.Errorf("arxiv fetch: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("arxiv: HTTP %d", resp.StatusCode)
-	}
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -47,85 +44,99 @@ func ArxivSearch(topic string, maxResults int) ([]ArxivResult, error) {
 	return parseArxivFeed(b)
 }
 
-// ArxivDigest returns a single string combining the abstracts of the top papers,
-// suitable for injection into an LLM prompt.
-func ArxivDigest(results []ArxivResult) string {
-	if len(results) == 0 {
-		return ""
-	}
-	var sb strings.Builder
-	for i, r := range results {
-		sb.WriteString(fmt.Sprintf("[arxiv paper %d] %s\n", i+1, r.Title))
-		if len(r.Authors) > 0 {
-			sb.WriteString(fmt.Sprintf("Authors: %s\n", strings.Join(r.Authors, ", ")))
+// ArxivSearchMulti searches multiple categories for a topic
+// Useful for finding both mainstream and fringe papers
+func ArxivSearchMulti(topic string, categories []string, maxPerCat int) ([]*ArxivPaper, error) {
+	var all []*ArxivPaper
+	seen := make(map[string]bool)
+
+	for _, cat := range categories {
+		query := fmt.Sprintf("cat:%s AND all:%s", cat, topic)
+		params := url.Values{
+			"search_query": {query},
+			"start":        {"0"},
+			"max_results":  {fmt.Sprintf("%d", maxPerCat)},
 		}
-		sb.WriteString(fmt.Sprintf("Abstract: %s\n\n", strings.TrimSpace(r.Abstract)))
+
+		resp, err := http.Get(arxivAPI + "?" + params.Encode())
+		if err != nil {
+			continue // don't fail on one category
+		}
+
+		b, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		papers, err := parseArxivFeed(b)
+		if err != nil {
+			continue
+		}
+
+		for _, p := range papers {
+			if !seen[p.ID] {
+				seen[p.ID] = true
+				p.Category = cat
+				all = append(all, p)
+			}
+		}
 	}
-	return strings.TrimSpace(sb.String())
+
+	return all, nil
 }
 
-// ── Atom XML parsing ──────────────────────────────────────────────────────────
-
-type atomFeed struct {
-	Entries []atomEntry `xml:"entry"`
+// KAEArxivCategories are the categories most relevant to cross-domain archaeology
+var KAEArxivCategories = []string{
+	"physics.gen-ph",   // general physics — where the weird stuff lives
+	"quant-ph",         // quantum physics
+	"cond-mat",         // condensed matter
+	"q-bio.NC",         // neurons and cognition
+	"cs.AI",            // AI
+	"nlin.AO",          // nonlinear dynamics, complex systems
 }
 
-type atomEntry struct {
-	Title     string       `xml:"title"`
-	Summary   string       `xml:"summary"`
-	Authors   []atomAuthor `xml:"author"`
-	Published string       `xml:"published"`
-	Links     []atomLink   `xml:"link"`
-}
+func parseArxivFeed(data []byte) ([]*ArxivPaper, error) {
+	var feed struct {
+		XMLName xml.Name `xml:"feed"`
+		Entries []struct {
+			ID      string `xml:"id"`
+			Title   string `xml:"title"`
+			Summary string `xml:"summary"`
+			Authors []struct {
+				Name string `xml:"name"`
+			} `xml:"author"`
+			Links []struct {
+				Href string `xml:"href,attr"`
+				Type string `xml:"type,attr"`
+			} `xml:"link"`
+		} `xml:"entry"`
+	}
 
-type atomAuthor struct {
-	Name string `xml:"name"`
-}
-
-type atomLink struct {
-	Href string `xml:"href,attr"`
-	Rel  string `xml:"rel,attr"`
-	Type string `xml:"type,attr"`
-}
-
-func parseArxivFeed(data []byte) ([]ArxivResult, error) {
-	var feed atomFeed
 	if err := xml.Unmarshal(data, &feed); err != nil {
 		return nil, fmt.Errorf("arxiv parse: %w", err)
 	}
 
-	results := make([]ArxivResult, 0, len(feed.Entries))
+	papers := make([]*ArxivPaper, 0, len(feed.Entries))
 	for _, e := range feed.Entries {
-		if strings.TrimSpace(e.Summary) == "" {
-			continue // skip entries with no abstract (error entries from the API)
-		}
-
-		r := ArxivResult{
+		p := &ArxivPaper{
+			ID:       e.ID,
 			Title:    strings.TrimSpace(e.Title),
 			Abstract: strings.TrimSpace(e.Summary),
+			URL:      e.ID,
 		}
-
 		for _, a := range e.Authors {
-			r.Authors = append(r.Authors, a.Name)
+			p.Authors = append(p.Authors, a.Name)
 		}
-
-		// prefer the HTML link; fall back to first link
-		for _, l := range e.Links {
-			if l.Type == "text/html" {
-				r.URL = l.Href
-				break
-			}
-		}
-		if r.URL == "" && len(e.Links) > 0 {
-			r.URL = e.Links[0].Href
-		}
-
-		if e.Published != "" {
-			r.Published, _ = time.Parse(time.RFC3339, e.Published)
-		}
-
-		results = append(results, r)
+		papers = append(papers, p)
 	}
 
-	return results, nil
+	return papers, nil
+}
+
+// PaperToChunks splits a paper into chunks for embedding
+func PaperToChunks(p *ArxivPaper) []string {
+	// Title + abstract is usually enough signal
+	full := fmt.Sprintf("Title: %s\n\nAbstract: %s", p.Title, p.Abstract)
+	return Chunk(full, 200, 30)
 }
