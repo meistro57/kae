@@ -3,9 +3,10 @@ package graph
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
-	"github.com/meistro/kae/internal/scoring"
+	"github.com/meistro57/kae/internal/scoring"
 )
 
 type Node struct {
@@ -148,4 +149,33 @@ func (g *Graph) AllNodes() []*Node {
 func (g *Graph) Summary() string {
 	return fmt.Sprintf("Nodes: %d | Edges: %d | Anomalies: %d",
 		g.NodeCount(), g.EdgeCount(), g.AnomalyCount())
+}
+// CleanSummary returns graph stats with junk nodes filtered out
+func (g *Graph) CleanSummary() string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	junkPhrases := []string{
+		"NO SOURCE", "SOURCE VERIFICATION", "SOURCE ACQUISITION",
+		"PASSAGES PROVIDED", "PROCESS OR AGENT RESPONSIBLE",
+		"NO DOMAINS", "NO CROSS-REFERENCE",
+	}
+
+	realNodes := 0
+	for _, n := range g.nodes {
+		isJunk := false
+		upper := strings.ToUpper(n.Label)
+		for _, phrase := range junkPhrases {
+			if strings.Contains(upper, phrase) {
+				isJunk = true
+				break
+			}
+		}
+		if !isJunk {
+			realNodes++
+		}
+	}
+
+	return fmt.Sprintf("Nodes: %d | Edges: %d | Anomalies: %d",
+		realNodes, len(g.edges), g.AnomalyCount())
 }

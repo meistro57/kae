@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/meistro/kae/internal/agent"
+	"github.com/meistro57/kae/internal/agent"
 )
 
 // ── Colour palette ────────────────────────────────────────────────────────────

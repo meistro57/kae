@@ -73,7 +73,7 @@ func (c *Client) doStream(system string, msgs []Message, ch chan<- Chunk) {
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("HTTP-Referer", "https://github.com/meistro/kae")
+	req.Header.Set("HTTP-Referer", "https://github.com/meistro57/kae")
 	req.Header.Set("X-Title", "Knowledge Archaeology Engine")
 
 	resp, err := c.http.Do(req)

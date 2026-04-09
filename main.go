@@ -8,9 +8,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/meistro/kae/internal/agent"
-	"github.com/meistro/kae/internal/config"
-	"github.com/meistro/kae/internal/ui"
+	"github.com/meistro57/kae/internal/agent"
+	"github.com/meistro57/kae/internal/config"
+	"github.com/meistro57/kae/internal/ui"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-package memory
+package store
 
 import (
 	"bytes"
@@ -43,7 +43,7 @@ type Chunk struct {
 // StoreChunk upserts a text chunk with its embedding
 func (c *Client) StoreChunk(chunk *Chunk) error {
 	point := map[string]any{
-		"id": chunk.ID,
+		"id": pointID(chunk.ID),
 		"vector": chunk.Vector,
 		"payload": map[string]any{
 			"text":   chunk.Text,
@@ -113,7 +113,7 @@ type NodeRecord struct {
 // StoreNode persists a graph node with its embedding for cross-run comparison
 func (c *Client) StoreNode(node *NodeRecord) error {
 	point := map[string]any{
-		"id": node.ID,
+		"id": pointID(node.ID),
 		"vector": node.Vector,
 		"payload": map[string]any{
 			"label":   node.Label,
@@ -288,4 +288,14 @@ func boolVal(m map[string]any, k string) bool {
 		}
 	}
 	return false
+}
+
+// pointID converts a string key to a uint64 for Qdrant compatibility
+func pointID(s string) uint64 {
+	h := uint64(14695981039346656037)
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= 1099511628211
+	}
+	return h
 }

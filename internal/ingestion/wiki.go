@@ -17,34 +17,74 @@ type WikiResult struct {
 	URL     string
 }
 
-// WikiSummary fetches a plain-text extract for a topic
 func WikiSummary(topic string) (*WikiResult, error) {
-	params := url.Values{
-		"action":        {"query"},
-		"format":        {"json"},
-		"titles":        {topic},
-		"prop":          {"extracts|info"},
-		"exintro":       {"true"},
-		"explaintext":   {"true"},
-		"inprop":        {"url"},
-		"redirects":     {"1"},
-	}
-
-	req, err := http.NewRequest("GET", wikiAPI+"?"+params.Encode(), nil)
+	// Search for best matching title first
+	title, err := wikiSearchTitle(topic)
 	if err != nil {
-		return nil, fmt.Errorf("wiki request: %w", err)
+		return nil, err
 	}
-	req.Header.Set("User-Agent", "KnowledgeArchaeologyEngine/1.0 (https://github.com/meistro57/kae)")
+	return wikiExtract(title)
+}
 
-	resp, err := httpClient.Do(req)
+func wikiSearchTitle(topic string) (string, error) {
+	params := url.Values{
+		"action":   {"query"},
+		"format":   {"json"},
+		"list":     {"search"},
+		"srsearch": {topic},
+		"srlimit":  {"1"},
+	}
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", wikiAPI+"?"+params.Encode(), nil)
+	req.Header.Set("User-Agent", "KAE-Bot/1.0 (knowledge-archaeology-engine)")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+
+	var result struct {
+		Query struct {
+			Search []struct {
+				Title string `json:"title"`
+			} `json:"search"`
+		} `json:"query"`
+	}
+	if err := json.Unmarshal(b, &result); err != nil {
+		return "", fmt.Errorf("search parse: %w", err)
+	}
+	if len(result.Query.Search) == 0 {
+		return "", fmt.Errorf("no results for %q", topic)
+	}
+	return result.Query.Search[0].Title, nil
+}
+
+func wikiExtract(title string) (*WikiResult, error) {
+	params := url.Values{
+		"action":      {"query"},
+		"format":      {"json"},
+		"titles":      {title},
+		"prop":        {"extracts|info"},
+		"exintro":     {"false"},
+		"explaintext": {"true"},
+		"inprop":      {"url"},
+		"redirects":   {"1"},
+		"exsectionformat": {"plain"},
+	}
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", wikiAPI+"?"+params.Encode(), nil)
+	req.Header.Set("User-Agent", "KAE-Bot/1.0 (knowledge-archaeology-engine)")
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("wiki fetch: %w", err)
 	}
 	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
 
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	// Guard against HTML responses
+	if len(b) > 0 && b[0] != '{' {
+		return nil, fmt.Errorf("wiki returned non-JSON for %q", title)
 	}
 
 	var result struct {
@@ -56,14 +96,12 @@ func WikiSummary(topic string) (*WikiResult, error) {
 			} `json:"pages"`
 		} `json:"query"`
 	}
-
 	if err := json.Unmarshal(b, &result); err != nil {
 		return nil, fmt.Errorf("wiki parse: %w", err)
 	}
-
 	for _, page := range result.Query.Pages {
 		if page.Extract == "" {
-			return nil, fmt.Errorf("no extract for %q", topic)
+			return nil, fmt.Errorf("empty extract for %q", title)
 		}
 		return &WikiResult{
 			Title:   page.Title,
@@ -71,11 +109,9 @@ func WikiSummary(topic string) (*WikiResult, error) {
 			URL:     page.FullURL,
 		}, nil
 	}
-
-	return nil, fmt.Errorf("no pages returned for %q", topic)
+	return nil, fmt.Errorf("no pages for %q", title)
 }
 
-// Chunk splits text into overlapping chunks for embedding
 func Chunk(text string, size, overlap int) []string {
 	words := strings.Fields(text)
 	var chunks []string

@@ -6,12 +6,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/meistro/kae/internal/config"
-	"github.com/meistro/kae/internal/graph"
-	"github.com/meistro/kae/internal/ingestion"
-	"github.com/meistro/kae/internal/llm"
-	"github.com/meistro/kae/internal/memory"
-	"github.com/meistro/kae/internal/scoring"
+	"github.com/meistro57/kae/internal/config"
+	"github.com/meistro57/kae/internal/graph"
+	"github.com/meistro57/kae/internal/ingestion"
+	"github.com/meistro57/kae/internal/llm"
+	"github.com/meistro57/kae/internal/store"
+	"github.com/meistro57/kae/internal/embeddings"
+	"github.com/meistro57/kae/internal/scoring"
 )
 
 type Phase string
@@ -47,7 +48,10 @@ type Snapshot struct {
 	Anomalies int
 	Sources   int
 	Cycles    int
-	TopNodes  []string
+	TopNodes      []string
+	TopWeights    []float64
+	QdrantOK      bool
+	QdrantVectors int
 }
 
 type Engine struct {
@@ -55,8 +59,8 @@ type Engine struct {
 	graph    *graph.Graph
 	brain    *llm.Client
 	fast     *llm.Client
-	qdrant   *memory.Client
-	embedder *memory.Embedder
+	qdrant   *store.Client
+	embedder *embeddings.Embedder
 	events   chan Event
 	runID    string
 
@@ -75,8 +79,8 @@ func NewEngine(cfg *config.Config) *Engine {
 		graph:    graph.New(),
 		brain:    llm.NewClient(cfg.OpenRouterKey, cfg.Model),
 		fast:     llm.NewClient(cfg.OpenRouterKey, cfg.FastModel),
-		qdrant:   memory.NewClient(cfg.QdrantURL),
-		embedder: memory.NewEmbedder(cfg.OpenRouterKey),
+		qdrant:   store.NewClient(cfg.QdrantURL),
+		embedder: embeddings.NewEmbedder(cfg.OpenRouterKey),
 		events:   make(chan Event, 256),
 		runID:    runID,
 	}
@@ -211,7 +215,16 @@ func (e *Engine) ingestPhase(topic string) []ingestion.SourceChunk {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		books, err := ingestion.GutenbergSearch(topic, 2)
+		relevant := ingestion.BooksForTopic(topic)
+			books := make([]*ingestion.GutenbergBook, 0)
+			for _, b := range relevant {
+				book, err := ingestion.GutenbergFetch(b.ID, b.Title)
+				if err == nil {
+					books = append(books, book)
+				}
+			}
+			var err error
+			err = nil
 		if err != nil || len(books) == 0 {
 			return
 		}
@@ -267,7 +280,7 @@ func (e *Engine) embedPhase(topic string, chunks []ingestion.SourceChunk) {
 
 		for j, vec := range vecs {
 			chunkID := fmt.Sprintf("%s_%s_%d", e.runID, slugify(topic), i+j)
-			_ = e.qdrant.StoreChunk(&memory.Chunk{
+			_ = e.qdrant.StoreChunk(&store.Chunk{
 				ID:     chunkID,
 				Text:   batch[j].Text,
 				Source: batch[j].Source,
@@ -288,7 +301,7 @@ func (e *Engine) embedPhase(topic string, chunks []ingestion.SourceChunk) {
 			Weight: 1.0,
 			Vector: topicVec,
 		})
-		_ = e.qdrant.StoreNode(&memory.NodeRecord{
+		_ = e.qdrant.StoreNode(&store.NodeRecord{
 			ID:     fmt.Sprintf("%s_%s", e.runID, slugify(topic)),
 			Label:  topic,
 			Domain: "ingested",
@@ -300,7 +313,7 @@ func (e *Engine) embedPhase(topic string, chunks []ingestion.SourceChunk) {
 	}
 }
 
-func (e *Engine) searchPhase(topic string) []*memory.Chunk {
+func (e *Engine) searchPhase(topic string) []*store.Chunk {
 	e.emit(Event{Phase: PhaseSearch, Focus: topic})
 
 	topicVec, err := e.embedder.Embed(topic)
@@ -322,7 +335,7 @@ func (e *Engine) searchPhase(topic string) []*memory.Chunk {
 	return candidates
 }
 
-func (e *Engine) thinkPhase(topic string, candidates []*memory.Chunk) string {
+func (e *Engine) thinkPhase(topic string, candidates []*store.Chunk) string {
 	e.emit(Event{Phase: PhaseThink, Focus: topic})
 
 	// Build a context window from the actual source passages
@@ -361,7 +374,7 @@ ANOMALY: <what mainstream avoids saying>
 NAIVE_CONCLUSION: <what the evidence actually points to>
 NEXT: <single next concept>`,
 			topic,
-			e.graph.Summary(),
+			e.graph.CleanSummary(),
 			contextBuilder.String(),
 		),
 	}}
@@ -424,7 +437,7 @@ NEXT: <single next concept>`,
 	return next
 }
 
-func (e *Engine) scorePhase(topic string, candidates []*memory.Chunk) {
+func (e *Engine) scorePhase(topic string, candidates []*store.Chunk) {
 	e.emit(Event{Phase: PhaseScore, Focus: topic})
 
 	if len(candidates) == 0 {
@@ -479,7 +492,7 @@ func (e *Engine) reportPhase() {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("\n## Cycle %d — %s\n", e.cycle, time.Now().Format("15:04:05")))
-	sb.WriteString(fmt.Sprintf("**Graph:** %s\n\n", e.graph.Summary()))
+	sb.WriteString(fmt.Sprintf("**Graph:** %s\n\n", e.graph.CleanSummary()))
 	sb.WriteString("**Emergent concepts:**\n")
 	for _, n := range top {
 		flag := ""
@@ -541,13 +554,20 @@ func (e *Engine) snapshot() Snapshot {
 		labels[i] = n.Label
 	}
 
+	weights := make([]float64, len(top))
+	for i, n := range top {
+		weights[i] = n.Weight
+	}
 	return Snapshot{
 		Nodes:     e.graph.NodeCount(),
 		Edges:     e.graph.EdgeCount(),
 		Anomalies: e.graph.AnomalyCount(),
 		Sources:   sources,
 		Cycles:    cycles,
-		TopNodes:  labels,
+		TopNodes:      labels,
+		TopWeights:    weights,
+		QdrantOK:      true,
+		QdrantVectors: e.sources,
 	}
 }
 
@@ -582,7 +602,7 @@ func parseResponse(s string) (connections []string, contradiction, anomaly, naiv
 	return
 }
 
-func buildCitation(chunks []*memory.Chunk) string {
+func buildCitation(chunks []*store.Chunk) string {
 	seen := make(map[string]bool)
 	var sources []string
 	for _, c := range chunks {
@@ -611,4 +631,19 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+func (e *Engine) MaxCycles() int {
+	return e.cfg.MaxCycles
+}
+
+func (e *Engine) Report() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.report.String()
+}
+
+func (e *Engine) Focus() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.focus
 }
