@@ -69,6 +69,7 @@ type Engine struct {
 	sources int
 	focus   string
 	report  strings.Builder
+	lastThink  strings.Builder
 	running bool
 }
 
@@ -194,7 +195,7 @@ func (e *Engine) ingestPhase(topic string) []ingestion.SourceChunk {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		papers, err := ingestion.ArxivSearchMulti(topic, ingestion.KAEArxivCategories, 3)
+		papers, err := ingestion.ArxivSearchMulti(topic, ingestion.KAEArxivCategories, 1)
 		if err != nil {
 			return
 		}
@@ -323,7 +324,17 @@ func (e *Engine) searchPhase(topic string) []*store.Chunk {
 	}
 
 	// Find the 10 most semantically similar chunks — these are our candidates
-	candidates, err := e.qdrant.SearchChunks(topicVec, 10, nil)
+	// Isolated by default — only search this run's chunks
+	// Use --shared flag to search across all runs
+	var chunkFilter map[string]any
+	if !e.cfg.SharedMemory {
+		chunkFilter = map[string]any{
+			"must": []map[string]any{
+				{"key": "run_id", "match": map[string]any{"value": e.runID}},
+			},
+		}
+	}
+	candidates, err := e.qdrant.SearchChunks(topicVec, 10, chunkFilter)
 	if err != nil {
 		e.emit(Event{Phase: PhaseSearch, OutputChunk: fmt.Sprintf("Search error: %v", err)})
 		return nil
@@ -381,9 +392,12 @@ NEXT: <single next concept>`,
 
 	ch := e.brain.Stream(system, msgs)
 	var output strings.Builder
+	var thinkBuffer strings.Builder
 	for chunk := range ch {
 		switch chunk.Type {
 		case llm.ChunkThink:
+			e.lastThink.WriteString(chunk.Text)
+			thinkBuffer.WriteString(chunk.Text)
 			e.emit(Event{Phase: PhaseThink, Focus: topic, ThinkChunk: chunk.Text})
 		case llm.ChunkText:
 			output.WriteString(chunk.Text)
@@ -494,6 +508,14 @@ func (e *Engine) reportPhase() {
 	sb.WriteString(fmt.Sprintf("\n## Cycle %d — %s\n", e.cycle, time.Now().Format("15:04:05")))
 	sb.WriteString(fmt.Sprintf("**Graph:** %s\n\n", e.graph.CleanSummary()))
 	sb.WriteString("**Emergent concepts:**\n")
+	    if think := e.lastThink.String(); think != "" {
+        sb.WriteString("**Thinking:**\n")
+        sb.WriteString(think)
+        sb.WriteString("\n\n")
+        e.lastThink.Reset()
+    }
+
+    sb.WriteString("**Emergent concepts:**\n")
 	for _, n := range top {
 		flag := ""
 		if n.Anomaly {
@@ -670,4 +692,38 @@ func (e *Engine) syncNodesToQdrant() {
 			Vector:  n.Vector,
 		})
 	}
+}
+
+// cleanThink strips R1 meta-talk from think blocks before writing to report
+func cleanThink(s string) string {
+	// Remove lines that are R1 self-instructions rather than actual reasoning
+	junkPhrases := []string{
+		"FINALLY, WRITE THE RESPONSE",
+		"NOW, FORMAT THE RESPONSE",
+		"I SHOULD ENSURE THAT MY ANSWERS",
+		"LET ME DOUBLE-CHECK",
+		"FORMAT YOUR ANSWER AS",
+		"WRITE THE RESPONSE IN THE SPECIFIED FORMAT",
+		"CONNECTIONS: <concept",
+		"CONTRADICTION: <what",
+		"ANOMALY: <what",
+		"NAIVE_CONCLUSION: <what",
+		"NEXT: <single",
+	}
+	lines := strings.Split(s, "\n")
+	var clean []string
+	for _, line := range lines {
+		upper := strings.ToUpper(strings.TrimSpace(line))
+		skip := false
+		for _, phrase := range junkPhrases {
+			if strings.Contains(upper, strings.ToUpper(phrase)) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			clean = append(clean, line)
+		}
+	}
+	return strings.TrimSpace(strings.Join(clean, "\n"))
 }

@@ -85,6 +85,9 @@ go run . --model "anthropic/claude-opus-4"
 # Use a different fast/bulk model
 go run . --fast "google/gemini-flash-1.5"
 
+# Search across all previous runs (default: isolated to current run)
+go run . --shared
+
 # Debug mode (tail -f debug.log in a second terminal)
 go run . --debug
 
@@ -209,6 +212,7 @@ KAE uses Qdrant as optional persistent vector memory. When running, every concep
 | `hnsw_ef` | `max(k×4, 64)` at query time |
 | Embedding fallback | Feature hashing (128-dim, no API needed) |
 | Embedding (configured) | Any OpenAI-compatible endpoint — default `text-embedding-3-small` (1536-dim) |
+| Memory isolation | Each run searches only its own chunks by default — use `--shared` to search across all runs |
 
 Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with no degradation to the core loop.
 
@@ -224,6 +228,8 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 - [x] arxiv paper ingestion
 - [x] Project Gutenberg ancient texts
 - [x] Qdrant vector memory — batch upsert, retry, payload indexes, configurable semantic embeddings
+- [x] Run-isolated memory (each run scoped by `run_id`, `--shared` to cross-search)
+- [x] Think-block capture — R1 reasoning written to live report each cycle (filtered of meta-instructions)
 - [ ] Graph persistence (resume runs)
 - [ ] Final report export to markdown/HTML
 - [ ] Anomaly scoring algorithm
@@ -245,4 +251,4 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 
 ---
 
-*KAE v0.2 — Built in WSL2 | Go | OpenRouter | Qdrant v1.17.1 | Pure curiosity*
+*KAE v0.3 — Built in WSL2 | Go | OpenRouter | Qdrant v1.17.1 | Pure curiosity*

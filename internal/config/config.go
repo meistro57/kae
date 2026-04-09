@@ -14,6 +14,7 @@ type Config struct {
 	QdrantURL     string
 	MaxCycles     int
 	Seed          string
+	SharedMemory  bool
 	// Embeddings — optional OpenAI-compatible endpoint for semantic vectors.
 	// If unset, falls back to feature hashing.
 	EmbeddingsURL   string

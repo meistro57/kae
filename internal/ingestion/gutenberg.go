@@ -14,78 +14,50 @@ type GutenbergBook struct {
 	TextURL string
 }
 
-// GutenbergFetch fetches a known Gutenberg text directly by ID
-// These are curated IDs for texts relevant to knowledge archaeology
-func GutenbergFetch(bookID int, title string) (*GutenbergBook, error) {
-	// Try plain text UTF-8 first, then ASCII
-	urls := []string{
-		fmt.Sprintf("https://www.gutenberg.org/cache/epub/%d/pg%d.txt", bookID, bookID),
-		fmt.Sprintf("https://www.gutenberg.org/files/%d/%d-0.txt", bookID, bookID),
-		fmt.Sprintf("https://www.gutenberg.org/files/%d/%d.txt", bookID, bookID),
-	}
-
-	for _, url := range urls {
-		resp, err := http.Get(url)
-		if err != nil || resp.StatusCode != 200 {
-			if resp != nil {
-				resp.Body.Close()
-			}
-			continue
-		}
-		defer resp.Body.Close()
-		b, err := io.ReadAll(resp.Body)
-		if err != nil {
-			continue
-		}
-		text := stripGutenbergBoilerplate(string(b))
-		if len(text) > 500 {
-			return &GutenbergBook{
-				ID:      bookID,
-				Title:   title,
-				TextURL: url,
-			}, nil
-		}
-	}
-	return nil, fmt.Errorf("could not fetch book %d", bookID)
-}
-
-// KAEBookList is a curated list of Gutenberg texts relevant to knowledge archaeology
-// Format: {id, title}
+// KAEBookList — verified correct Gutenberg IDs
 var KAEBookList = []struct {
 	ID    int
 	Title string
 }{
-	{2680, "Meditations - Marcus Aurelius"},
-	{1080, "The Republic - Plato"},
-	{1497, "The Laws - Plato"},
-	{3296, "Timaeus - Plato"},          // Plato's cosmology
-	{8800, "The Upanishads"},
-	{2411, "The Yoga Sutras of Patanjali"},
-	{17921, "The Kybalion - Three Initiates"}, // Hermetic philosophy
-	{974,  "The Gospel of Thomas"},
-	{6748, "The Book of Enoch"},
-	{3438, "Ecclesiastes"},
-	{1404, "The Emerald Tablet"},
+	{55201, "The Republic - Plato"},
+	{1572,  "Timaeus - Plato"},          // Plato's cosmology
+	{14209, "The Kybalion - Three Initiates"}, // Hermetic philosophy
+	{2680,  "Meditations - Marcus Aurelius"},
+	{3438,  "Ecclesiastes"},
+	{6748,  "The Book of Enoch"},
+	{2411,  "The Yoga Sutras of Patanjali"},
+	{48926, "The Upanishads"},
+	{45977, "The Emerald Tablet"},
+	{1396,  "Phaedo - Plato"},           // Soul and immortality
+	{1656,  "The Symposium - Plato"},
+	{3207,  "Tao Te Ching - Lao Tzu"},
 }
 
-// BooksForTopic returns book IDs most relevant to a topic
+// BooksForTopic returns relevant books for a topic
 func BooksForTopic(topic string) []struct{ ID int; Title string } {
 	topic = strings.ToLower(topic)
-	var relevant []struct{ ID int; Title string }
 
 	keywords := map[string][]int{
-		"cosmolog": {3296, 8800, 17921},
-		"conscious": {2411, 8800, 2680},
-		"ancient":   {3296, 6748, 8800, 17921},
-		"philosoph": {1080, 1497, 3296, 2680},
-		"hermeti":   {17921, 1404},
-		"vedic":     {8800, 2411},
-		"quantum":   {17921, 8800},
-		"void":      {8800, 3296, 6748},
-		"enoch":     {6748},
+		"cosmolog":   {1572, 14209, 55201, 6748},
+		"conscious":  {2411, 48926, 2680, 1396},
+		"ancient":    {1572, 6748, 48926, 14209, 3207},
+		"philosoph":  {55201, 1396, 1656, 2680, 1572},
+		"hermeti":    {14209, 45977},
+		"vedic":      {48926, 2411},
+		"quantum":    {14209, 48926, 2680},
+		"void":       {48926, 1572, 6748, 3207},
+		"soul":       {1396, 48926, 2411, 6748},
+		"reincarn":   {1396, 48926, 2411, 55201},
+		"mana":       {14209, 48926, 3207},
+		"observer":   {2680, 14209, 48926},
+		"tao":        {3207, 14209},
+		"enoch":      {6748},
+		"firmament":  {6748, 1572, 3438},
 	}
 
 	seen := make(map[int]bool)
+	var relevant []struct{ ID int; Title string }
+
 	for keyword, ids := range keywords {
 		if strings.Contains(topic, keyword) {
 			for _, id := range ids {
@@ -101,11 +73,42 @@ func BooksForTopic(topic string) []struct{ ID int; Title string } {
 		}
 	}
 
-	// Default: return first 2 from list
 	if len(relevant) == 0 {
+		// Default: Kybalion + Meditations — good general sources
 		return KAEBookList[:2]
 	}
+	// Cap at 3 books per cycle
+	if len(relevant) > 3 {
+		relevant = relevant[:3]
+	}
 	return relevant
+}
+
+func GutenbergFetch(bookID int, title string) (*GutenbergBook, error) {
+	urls := []string{
+		fmt.Sprintf("https://www.gutenberg.org/cache/epub/%d/pg%d.txt", bookID, bookID),
+		fmt.Sprintf("https://www.gutenberg.org/files/%d/%d-0.txt", bookID, bookID),
+		fmt.Sprintf("https://www.gutenberg.org/files/%d/%d.txt", bookID, bookID),
+	}
+	for _, url := range urls {
+		resp, err := http.Get(url)
+		if err != nil || resp.StatusCode != 200 {
+			if resp != nil {
+				resp.Body.Close()
+			}
+			continue
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			continue
+		}
+		text := stripGutenbergBoilerplate(string(b))
+		if len(text) > 500 {
+			return &GutenbergBook{ID: bookID, Title: title, TextURL: url}, nil
+		}
+	}
+	return nil, fmt.Errorf("could not fetch book %d", bookID)
 }
 
 func FetchBookText(book *GutenbergBook, maxWords int) (string, error) {

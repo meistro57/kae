@@ -18,6 +18,7 @@ func main() {
 	fast   := flag.String("fast", "google/gemini-2.5-flash", "Fast model for bulk ingestion passes")
 	cycles := flag.Int("cycles", 0, "Max cycles — 0 means run until graph stabilizes")
 	seed   := flag.String("seed", "", "Optional seed topic — leave empty for autonomous start")
+	shared := flag.Bool("shared", false, "Use shared memory across runs")
 	debug  := flag.Bool("debug", false, "Log debug output to debug.log")
 	flag.Parse()
 
@@ -40,7 +41,8 @@ func main() {
 	cfg.Model     = *model
 	cfg.FastModel = *fast
 	cfg.MaxCycles = *cycles
-	cfg.Seed      = *seed
+	cfg.Seed         = *seed
+	cfg.SharedMemory = *shared
 
 	eng := agent.NewEngine(cfg)
 	app := ui.NewApp(eng)
