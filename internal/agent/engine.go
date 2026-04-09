@@ -505,7 +505,7 @@ func (e *Engine) reportPhase() {
 		}
 		sb.WriteString(fmt.Sprintf("- %s (weight: %.1f)%s%s\n", n.Label, n.Weight, score, flag))
 	}
-
+    e.syncNodesToQdrant() 
 	e.mu.Lock()
 	e.report.WriteString(sb.String())
 	e.mu.Unlock()
@@ -646,4 +646,28 @@ func (e *Engine) Focus() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.focus
+}
+
+func (e *Engine) syncNodesToQdrant() {
+	nodes := e.graph.AllNodes()
+	for _, n := range nodes {
+		if len(n.Vector) == 0 {
+			// embed on demand if no vector yet
+			vec, err := e.embedder.Embed(n.Label)
+			if err != nil {
+				continue
+			}
+			n.Vector = vec
+		}
+		_ = e.qdrant.StoreNode(&store.NodeRecord{
+			ID:      fmt.Sprintf("%s_%s", e.runID, n.ID),
+			Label:   n.Label,
+			Domain:  n.Domain,
+			RunID:   e.runID,
+			Weight:  n.Weight,
+			Anomaly: n.Anomaly,
+			Cycle:   e.cycle,
+			Vector:  n.Vector,
+		})
+	}
 }
