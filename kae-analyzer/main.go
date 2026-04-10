@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	qdrantURL string
+	qdrantURL  string
 	collection string
 )
 
@@ -40,7 +40,7 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "kae-analyzer",
 		Short: "Analyze Knowledge Archaeology Engine data in Qdrant",
-		Long:  `CLI tool for analyzing KAE concept graphs, anomalies, and convergence patterns.
+		Long: `CLI tool for analyzing KAE concept graphs, anomalies, and convergence patterns.
 		
 Examples:
   kae-analyzer runs                                    # List all runs
@@ -326,7 +326,7 @@ func searchConceptsCmd() *cobra.Command {
 
 			runs := getAllRuns()
 			matches := []ConceptNode{}
-			
+
 			for _, run := range runs {
 				nodes := getRunNodes(run.ID, 100)
 				for _, node := range nodes {

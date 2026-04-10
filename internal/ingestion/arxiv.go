@@ -88,12 +88,12 @@ func ArxivSearchMulti(topic string, categories []string, maxPerCat int) ([]*Arxi
 
 // KAEArxivCategories are the categories most relevant to cross-domain archaeology
 var KAEArxivCategories = []string{
-	"physics.gen-ph",   // general physics — where the weird stuff lives
-	"quant-ph",         // quantum physics
-	"cond-mat",         // condensed matter
-	"q-bio.NC",         // neurons and cognition
-	"cs.AI",            // AI
-	"nlin.AO",          // nonlinear dynamics, complex systems
+	"physics.gen-ph", // general physics — where the weird stuff lives
+	"quant-ph",       // quantum physics
+	"cond-mat",       // condensed matter
+	"q-bio.NC",       // neurons and cognition
+	"cs.AI",          // AI
+	"nlin.AO",        // nonlinear dynamics, complex systems
 }
 
 func parseArxivFeed(data []byte) ([]*ArxivPaper, error) {

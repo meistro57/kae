@@ -62,14 +62,14 @@ func wikiSearchTitle(topic string) (string, error) {
 
 func wikiExtract(title string) (*WikiResult, error) {
 	params := url.Values{
-		"action":      {"query"},
-		"format":      {"json"},
-		"titles":      {title},
-		"prop":        {"extracts|info"},
-		"exintro":     {"false"},
-		"explaintext": {"true"},
-		"inprop":      {"url"},
-		"redirects":   {"1"},
+		"action":          {"query"},
+		"format":          {"json"},
+		"titles":          {title},
+		"prop":            {"extracts|info"},
+		"exintro":         {"false"},
+		"explaintext":     {"true"},
+		"inprop":          {"url"},
+		"redirects":       {"1"},
 		"exsectionformat": {"plain"},
 	}
 	client := &http.Client{}

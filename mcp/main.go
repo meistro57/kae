@@ -22,9 +22,9 @@ type JSONRPCRequest struct {
 }
 
 type JSONRPCResponse struct {
-	JSONRPC string `json:"jsonrpc"`
-	ID      any    `json:"id"`
-	Result  any    `json:"result,omitempty"`
+	JSONRPC string    `json:"jsonrpc"`
+	ID      any       `json:"id"`
+	Result  any       `json:"result,omitempty"`
 	Error   *RPCError `json:"error,omitempty"`
 }
 
@@ -158,12 +158,12 @@ func toolTopNodes(runID string, limit int) (string, error) {
 		pt := p.(map[string]any)
 		payload, _ := pt["payload"].(map[string]any)
 		n := node{
-			Label:  strVal(payload, "label"),
-			Weight: floatVal(payload, "weight"),
+			Label:   strVal(payload, "label"),
+			Weight:  floatVal(payload, "weight"),
 			Anomaly: boolVal(payload, "anomaly"),
-			RunID:  strVal(payload, "run_id"),
-			Domain: strVal(payload, "domain"),
-			Cycle:  intVal(payload, "cycle"),
+			RunID:   strVal(payload, "run_id"),
+			Domain:  strVal(payload, "domain"),
+			Cycle:   intVal(payload, "cycle"),
 		}
 		if n.Label != "" {
 			nodes = append(nodes, n)

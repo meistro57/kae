@@ -103,8 +103,8 @@ type App struct {
 	phase string
 	focus string
 
-	spin     spinner.Model
-	cyclePB  progress.Model
+	spin      spinner.Model
+	cyclePB   progress.Model
 	maxCycles int
 
 	ready bool
@@ -121,9 +121,9 @@ func NewApp(eng *agent.Engine) *App {
 	)
 
 	return &App{
-		eng:      eng,
-		spin:     s,
-		cyclePB:  pb,
+		eng:       eng,
+		spin:      s,
+		cyclePB:   pb,
 		maxCycles: eng.MaxCycles(),
 	}
 }
@@ -212,13 +212,13 @@ func (a *App) View() string {
 	}
 
 	header := a.renderHeader()
-	bodyH  := a.height - lipgloss.Height(header) - 3
-	leftW  := a.width * 2 / 5
+	bodyH := a.height - lipgloss.Height(header) - 3
+	leftW := a.width * 2 / 5
 	rightW := a.width - leftW - 3
 
-	left  := a.renderLeft(leftW, bodyH)
+	left := a.renderLeft(leftW, bodyH)
 	right := a.renderRight(rightW, bodyH)
-	body  := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	footer := a.renderFooter()
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
@@ -237,10 +237,10 @@ func (a *App) renderHeader() string {
 
 	// two rows so neither line needs to be very wide
 	statsRow1 := strings.Join([]string{
-		statStyle.Render("nodes:")  + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Nodes)),
-		statStyle.Render("edges:")  + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Edges)),
-		statStyle.Render("anom:")   + " " + anomalyStyle.Render(fmt.Sprintf("%d", a.snap.Anomalies)),
-		statStyle.Render("cycle:")  + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Cycles)),
+		statStyle.Render("nodes:") + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Nodes)),
+		statStyle.Render("edges:") + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Edges)),
+		statStyle.Render("anom:") + " " + anomalyStyle.Render(fmt.Sprintf("%d", a.snap.Anomalies)),
+		statStyle.Render("cycle:") + " " + statValueStyle.Render(fmt.Sprintf("%d", a.snap.Cycles)),
 	}, "  ")
 
 	// cycle progress bar (only when a limit is set)
@@ -275,8 +275,8 @@ func (a *App) renderHeader() string {
 func (a *App) renderLeft(w, h int) string {
 	halfH := h / 2
 
-	thinkTitle  := panelTitle("💭 THINKING", colorThink)
-	thinkPanel  := borderStyle.Width(w - 2).Height(halfH - 2).Render(a.thinkVP.View())
+	thinkTitle := panelTitle("💭 THINKING", colorThink)
+	thinkPanel := borderStyle.Width(w - 2).Height(halfH - 2).Render(a.thinkVP.View())
 	outputTitle := panelTitle("⚡ OUTPUT", colorAccent)
 	outputPanel := borderStyle.Width(w - 2).Height(halfH - 2).Render(a.outputVP.View())
 
@@ -287,9 +287,9 @@ func (a *App) renderLeft(w, h int) string {
 }
 
 func (a *App) renderRight(w, h int) string {
-	topTitle  := panelTitle("🔗 EMERGENT CONCEPTS", colorAccent)
+	topTitle := panelTitle("🔗 EMERGENT CONCEPTS", colorAccent)
 	nodesContent := a.renderConceptBars(w - 4)
-	nodesPanel   := borderStyle.Width(w - 2).Height(h/3 - 2).Render(nodesContent)
+	nodesPanel := borderStyle.Width(w - 2).Height(h/3 - 2).Render(nodesContent)
 
 	reportTitle := panelTitle("📄 LIVE REPORT", colorReport)
 	reportPanel := borderStyle.Width(w - 2).Height(h - h/3 - 4).Render(a.reportVP.View())
@@ -315,7 +315,7 @@ func (a *App) renderConceptBars(availW int) string {
 	}
 
 	labelW := 22
-	barW   := availW - labelW - 10
+	barW := availW - labelW - 10
 	if barW < 4 {
 		barW = 4
 	}
@@ -361,12 +361,12 @@ func (a *App) renderFooter() string {
 }
 
 func (a *App) initViewports() {
-	bodyH  := a.height - 6
-	leftW  := a.width*2/5 - 4
+	bodyH := a.height - 6
+	leftW := a.width*2/5 - 4
 	rightW := a.width - a.width*2/5 - 4
-	halfH  := bodyH / 2
+	halfH := bodyH / 2
 
-	a.thinkVP  = viewport.New(leftW, halfH-4)
+	a.thinkVP = viewport.New(leftW, halfH-4)
 	a.outputVP = viewport.New(leftW, halfH-4)
 	a.reportVP = viewport.New(rightW, bodyH-bodyH/3-6)
 }

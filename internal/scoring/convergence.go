@@ -16,28 +16,28 @@ type RunSummary struct {
 
 // NodeSummary is a lightweight node record for convergence comparison
 type NodeSummary struct {
-	Label       string
-	Weight      float64
-	Anomaly     bool
+	Label           string
+	Weight          float64
+	Anomaly         bool
 	SimilarityScore float64 // filled in during comparison
 }
 
 // ConvergenceResult is the output of comparing two or more runs
 type ConvergenceResult struct {
-	Runs          []string          // run IDs compared
-	OverlapScore  float64           // 0.0–1.0
-	SharedNodes   []ConvergedNode   // nodes that appeared across runs
-	UniqueNodes   map[string][]string // runID → nodes only in that run
-	Verdict       string
+	Runs         []string            // run IDs compared
+	OverlapScore float64             // 0.0–1.0
+	SharedNodes  []ConvergedNode     // nodes that appeared across runs
+	UniqueNodes  map[string][]string // runID → nodes only in that run
+	Verdict      string
 }
 
 // ConvergedNode is a concept that appeared in multiple runs
 type ConvergedNode struct {
-	Label       string
-	Runs        []string  // which runs surfaced this
-	AvgWeight   float64
-	IsAnomaly   bool
-	Confidence  float64  // how strongly it converged
+	Label      string
+	Runs       []string // which runs surfaced this
+	AvgWeight  float64
+	IsAnomaly  bool
+	Confidence float64 // how strongly it converged
 }
 
 // CompareRuns measures overlap between multiple run summaries

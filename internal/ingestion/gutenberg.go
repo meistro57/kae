@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -20,67 +21,103 @@ var KAEBookList = []struct {
 	Title string
 }{
 	{55201, "The Republic - Plato"},
-	{1572,  "Timaeus - Plato"},          // Plato's cosmology
+	{1572, "Timaeus - Plato"},                 // Plato's cosmology
 	{14209, "The Kybalion - Three Initiates"}, // Hermetic philosophy
-	{2680,  "Meditations - Marcus Aurelius"},
-	{3438,  "Ecclesiastes"},
-	{6748,  "The Book of Enoch"},
-	{2411,  "The Yoga Sutras of Patanjali"},
+	{2680, "Meditations - Marcus Aurelius"},
+	{3438, "Ecclesiastes"},
+	{6748, "The Book of Enoch"},
+	{2411, "The Yoga Sutras of Patanjali"},
 	{48926, "The Upanishads"},
 	{45977, "The Emerald Tablet"},
-	{1396,  "Phaedo - Plato"},           // Soul and immortality
-	{1656,  "The Symposium - Plato"},
-	{3207,  "Tao Te Ching - Lao Tzu"},
+	{1396, "Phaedo - Plato"}, // Soul and immortality
+	{1656, "The Symposium - Plato"},
+	{3207, "Tao Te Ching - Lao Tzu"},
 }
 
 // BooksForTopic returns relevant books for a topic
-func BooksForTopic(topic string) []struct{ ID int; Title string } {
+func BooksForTopic(topic string) []struct {
+	ID    int
+	Title string
+} {
 	topic = strings.ToLower(topic)
 
 	keywords := map[string][]int{
-		"cosmolog":   {1572, 14209, 55201, 6748},
-		"conscious":  {2411, 48926, 2680, 1396},
-		"ancient":    {1572, 6748, 48926, 14209, 3207},
-		"philosoph":  {55201, 1396, 1656, 2680, 1572},
-		"hermeti":    {14209, 45977},
-		"vedic":      {48926, 2411},
-		"quantum":    {14209, 48926, 2680},
-		"void":       {48926, 1572, 6748, 3207},
-		"soul":       {1396, 48926, 2411, 6748},
-		"reincarn":   {1396, 48926, 2411, 55201},
-		"mana":       {14209, 48926, 3207},
-		"observer":   {2680, 14209, 48926},
-		"tao":        {3207, 14209},
-		"enoch":      {6748},
-		"firmament":  {6748, 1572, 3438},
+		"cosmolog":  {1572, 14209, 55201, 6748},
+		"conscious": {2411, 48926, 2680, 1396},
+		"ancient":   {1572, 6748, 48926, 14209, 3207},
+		"philosoph": {55201, 1396, 1656, 2680, 1572},
+		"hermeti":   {14209, 45977},
+		"vedic":     {48926, 2411},
+		"quantum":   {14209, 48926, 2680},
+		"void":      {48926, 1572, 6748, 3207},
+		"soul":      {1396, 48926, 2411, 6748},
+		"reincarn":  {1396, 48926, 2411, 55201},
+		"mana":      {14209, 48926, 3207},
+		"observer":  {2680, 14209, 48926},
+		"tao":       {3207, 14209},
+		"enoch":     {6748},
+		"firmament": {6748, 1572, 3438},
 	}
 
-	seen := make(map[int]bool)
-	var relevant []struct{ ID int; Title string }
+	type scoredBook struct {
+		ID    int
+		Score int
+	}
 
+	scoreByID := make(map[int]int)
 	for keyword, ids := range keywords {
 		if strings.Contains(topic, keyword) {
-			for _, id := range ids {
-				if !seen[id] {
-					seen[id] = true
-					for _, book := range KAEBookList {
-						if book.ID == id {
-							relevant = append(relevant, book)
-						}
-					}
-				}
+			for rank, id := range ids {
+				// Higher-ranked ids in a keyword list get a stronger signal.
+				scoreByID[id] += len(ids) - rank
 			}
 		}
 	}
 
-	if len(relevant) == 0 {
+	if len(scoreByID) == 0 {
 		// Default: Kybalion + Meditations — good general sources
-		return KAEBookList[:2]
+		return []struct {
+			ID    int
+			Title string
+		}{
+			KAEBookList[2],
+			KAEBookList[3],
+		}
 	}
-	// Cap at 3 books per cycle
-	if len(relevant) > 3 {
-		relevant = relevant[:3]
+
+	positionByID := make(map[int]int, len(KAEBookList))
+	for i, book := range KAEBookList {
+		positionByID[book.ID] = i
 	}
+
+	scored := make([]scoredBook, 0, len(scoreByID))
+	for id, score := range scoreByID {
+		scored = append(scored, scoredBook{ID: id, Score: score})
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].Score == scored[j].Score {
+			return positionByID[scored[i].ID] < positionByID[scored[j].ID]
+		}
+		return scored[i].Score > scored[j].Score
+	})
+
+	relevant := make([]struct {
+		ID    int
+		Title string
+	}, 0, 3)
+	for _, candidate := range scored {
+		for _, book := range KAEBookList {
+			if book.ID == candidate.ID {
+				relevant = append(relevant, book)
+				break
+			}
+		}
+		if len(relevant) == 3 {
+			break
+		}
+	}
+
 	return relevant
 }
 
