@@ -1,4 +1,5 @@
 .env
+.venv
 debug.log
 report*.md
 think_*.log
