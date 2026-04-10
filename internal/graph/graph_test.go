@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/meistro57/kae/internal/scoring"
@@ -87,5 +88,34 @@ func TestCleanSummaryFiltersJunkNodes(t *testing.T) {
 	want := "Nodes: 1 | Edges: 0 | Anomalies: 0"
 	if summary != want {
 		t.Fatalf("unexpected clean summary: want %q got %q", want, summary)
+	}
+}
+
+func TestSaveLoadRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	g := New()
+	g.UpsertNode(&Node{ID: "a", Label: "Alpha", Domain: "ingested", Weight: 1.5, Sources: []string{"https://example.com/a"}})
+	g.UpsertNode(&Node{ID: "b", Label: "Beta", Domain: "inferred", Weight: 2.5, Anomaly: true})
+	g.AddEdge(&Edge{From: "a", To: "b", Relation: "connects_to", Confidence: 0.8, Citation: "https://example.com/cite"})
+
+	path := filepath.Join(t.TempDir(), "graph.json")
+	if err := g.SaveToFile(path); err != nil {
+		t.Fatalf("save graph: %v", err)
+	}
+
+	loaded := New()
+	if err := loaded.LoadFromFile(path); err != nil {
+		t.Fatalf("load graph: %v", err)
+	}
+
+	if loaded.NodeCount() != 2 {
+		t.Fatalf("expected 2 nodes, got %d", loaded.NodeCount())
+	}
+	if loaded.EdgeCount() != 1 {
+		t.Fatalf("expected 1 edge, got %d", loaded.EdgeCount())
+	}
+	if loaded.AnomalyCount() != 1 {
+		t.Fatalf("expected 1 anomaly, got %d", loaded.AnomalyCount())
 	}
 }

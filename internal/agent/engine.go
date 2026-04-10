@@ -89,6 +89,9 @@ func NewEngine(cfg *config.Config) *Engine {
 
 func (e *Engine) Events() <-chan Event { return e.events }
 func (e *Engine) RunID() string        { return e.runID }
+func (e *Engine) SaveGraph(path string) error {
+	return e.graph.SaveToFile(path)
+}
 
 func (e *Engine) Start() {
 	e.mu.Lock()
@@ -102,6 +105,14 @@ func (e *Engine) Start() {
 }
 
 func (e *Engine) run() {
+	if path := strings.TrimSpace(e.cfg.ResumeGraphPath); path != "" {
+		if err := e.graph.LoadFromFile(path); err != nil {
+			e.emit(Event{Err: fmt.Errorf("resume graph: %w", err)})
+		} else {
+			e.emit(Event{Phase: PhaseIdle, Focus: fmt.Sprintf("Loaded graph: %s", path)})
+		}
+	}
+
 	// Ensure Qdrant collections exist
 	e.emit(Event{Phase: PhaseIdle, Focus: "Initialising memory..."})
 	if err := e.qdrant.EnsureCollections(); err != nil {

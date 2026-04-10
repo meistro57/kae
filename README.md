@@ -80,6 +80,12 @@ go run . --seed "observer effect"
 # Limit cycles
 go run . --cycles 50
 
+# Resume from previous graph snapshot
+go run . --resume-graph graph_snapshot.json --cycles 25
+
+# Save current graph snapshot on exit
+go run . --save-graph graph_snapshot.json
+
 # Use a different thinking model
 go run . --model "anthropic/claude-opus-4"
 
@@ -231,7 +237,7 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 - [x] Qdrant vector memory — batch upsert, retry, payload indexes, configurable semantic embeddings
 - [x] Run-isolated memory (each run scoped by `run_id`, `--shared` to cross-search)
 - [x] Think-block capture — R1 reasoning written to live report each cycle (filtered of meta-instructions)
-- [ ] Graph persistence (resume runs)
+- [x] Graph persistence (save/load JSON snapshots with `--save-graph` / `--resume-graph`)
 - [ ] Final report export to markdown/HTML
 - [ ] Anomaly scoring algorithm
 - [ ] Multi-source contradiction detection
