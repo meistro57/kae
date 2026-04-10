@@ -17,6 +17,8 @@ KAE is a self-directing CLI agent that:
 5. **Flags anomalies** — where mainstream consensus goes silent, contradicts itself, or suspiciously avoids a thread
 6. **Generates a living report** — builds as it runs, saves automatically on exit
 
+<img width="873" height="1563" alt="image" src="https://github.com/user-attachments/assets/764c012e-8af9-4c54-9e65-c2f47f951eaf" />
+
 The hypothesis: if you feed it everything and let it run unbiased, it arrives at the same place the outliers, mystics, and fringe researchers already are. But this time with receipts.
 
 ---
