@@ -9,9 +9,9 @@ import (
 type Stance int
 
 const (
-	StanceSupport     Stance = iota // source explicitly supports the claim
-	StanceContradict                // source explicitly contradicts the claim
-	StanceSilent                    // source is relevant but says nothing about the claim
+	StanceSupport    Stance = iota // source explicitly supports the claim
+	StanceContradict               // source explicitly contradicts the claim
+	StanceSilent                   // source is relevant but says nothing about the claim
 )
 
 // Evidence is a single source's position on a claim
@@ -25,12 +25,12 @@ type Evidence struct {
 // ContradictionScore is the result of scoring a claim against its evidence
 type ContradictionScore struct {
 	Claim         string
-	Support       float64  // weighted sum of supporting evidence
-	Contradiction float64  // weighted sum of contradicting evidence
-	Silence       float64  // weighted sum of relevant-but-silent sources
-	Total         float64  // total weight of all evidence considered
-	AnomalyScore  float64  // 0.0–1.0, higher = more anomalous
-	IsAnomaly     bool     // true if silence dominates or contradiction > support
+	Support       float64 // weighted sum of supporting evidence
+	Contradiction float64 // weighted sum of contradicting evidence
+	Silence       float64 // weighted sum of relevant-but-silent sources
+	Total         float64 // total weight of all evidence considered
+	AnomalyScore  float64 // 0.0–1.0, higher = more anomalous
+	IsAnomaly     bool    // true if silence dominates or contradiction > support
 	Explanation   string
 }
 

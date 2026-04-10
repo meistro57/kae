@@ -150,6 +150,7 @@ func (g *Graph) Summary() string {
 	return fmt.Sprintf("Nodes: %d | Edges: %d | Anomalies: %d",
 		g.NodeCount(), g.EdgeCount(), g.AnomalyCount())
 }
+
 // CleanSummary returns graph stats with junk nodes filtered out
 func (g *Graph) CleanSummary() string {
 	g.mu.RLock()

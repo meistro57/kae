@@ -14,12 +14,12 @@ import (
 )
 
 func main() {
-	model  := flag.String("model", "deepseek/deepseek-r1", "OpenRouter model (default: deepseek-r1 for visible thinking)")
-	fast   := flag.String("fast", "google/gemini-2.5-flash", "Fast model for bulk ingestion passes")
+	model := flag.String("model", "deepseek/deepseek-r1", "OpenRouter model (default: deepseek-r1 for visible thinking)")
+	fast := flag.String("fast", "google/gemini-2.5-flash", "Fast model for bulk ingestion passes")
 	cycles := flag.Int("cycles", 0, "Max cycles — 0 means run until graph stabilizes")
-	seed   := flag.String("seed", "", "Optional seed topic — leave empty for autonomous start")
+	seed := flag.String("seed", "", "Optional seed topic — leave empty for autonomous start")
 	shared := flag.Bool("shared", false, "Use shared memory across runs")
-	debug  := flag.Bool("debug", false, "Log debug output to debug.log")
+	debug := flag.Bool("debug", false, "Log debug output to debug.log")
 	flag.Parse()
 
 	if *debug {
@@ -38,10 +38,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	cfg.Model     = *model
+	cfg.Model = *model
 	cfg.FastModel = *fast
 	cfg.MaxCycles = *cycles
-	cfg.Seed         = *seed
+	cfg.Seed = *seed
 	cfg.SharedMemory = *shared
 
 	eng := agent.NewEngine(cfg)

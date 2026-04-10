@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	CollectionChunks = "kae_chunks"  // raw ingested source chunks
-	CollectionNodes  = "kae_nodes"   // graph nodes across all runs
-	VectorDim        = 1536          // OpenRouter text-embedding-3-small
+	CollectionChunks = "kae_chunks" // raw ingested source chunks
+	CollectionNodes  = "kae_nodes"  // graph nodes across all runs
+	VectorDim        = 1536         // OpenRouter text-embedding-3-small
 )
 
 // Client wraps the Qdrant REST API
@@ -32,18 +32,18 @@ func NewClient(baseURL string) *Client {
 
 // Chunk is a source passage stored in Qdrant
 type Chunk struct {
-	ID       string
-	Text     string
-	Source   string  // URL or title
-	Topic    string  // concept this chunk relates to
-	RunID    string  // which KAE run produced this
-	Vector   []float32
+	ID     string
+	Text   string
+	Source string // URL or title
+	Topic  string // concept this chunk relates to
+	RunID  string // which KAE run produced this
+	Vector []float32
 }
 
 // StoreChunk upserts a text chunk with its embedding
 func (c *Client) StoreChunk(chunk *Chunk) error {
 	point := map[string]any{
-		"id": pointID(chunk.ID),
+		"id":     pointID(chunk.ID),
 		"vector": chunk.Vector,
 		"payload": map[string]any{
 			"text":   chunk.Text,
@@ -99,21 +99,21 @@ func (c *Client) SearchChunks(vector []float32, topK int, filter map[string]any)
 
 // NodeRecord is a persisted graph node across runs
 type NodeRecord struct {
-	ID         string
-	Label      string
-	Domain     string
-	RunID      string
-	Weight     float64
-	Anomaly    bool
-	Sources    []string
-	Cycle      int
-	Vector     []float32  // embedding of the node label
+	ID      string
+	Label   string
+	Domain  string
+	RunID   string
+	Weight  float64
+	Anomaly bool
+	Sources []string
+	Cycle   int
+	Vector  []float32 // embedding of the node label
 }
 
 // StoreNode persists a graph node with its embedding for cross-run comparison
 func (c *Client) StoreNode(node *NodeRecord) error {
 	point := map[string]any{
-		"id": pointID(node.ID),
+		"id":     pointID(node.ID),
 		"vector": node.Vector,
 		"payload": map[string]any{
 			"label":   node.Label,
@@ -164,13 +164,13 @@ func (c *Client) FindSimilarNodes(vector []float32, topK int, excludeRunID strin
 	nodes := make([]*NodeRecord, 0, len(result.Result))
 	for _, r := range result.Result {
 		nodes = append(nodes, &NodeRecord{
-			ID:     fmt.Sprintf("%v", r.ID),
-			Label:  strVal(r.Payload, "label"),
-			Domain: strVal(r.Payload, "domain"),
-			RunID:  strVal(r.Payload, "run_id"),
-			Weight: floatVal(r.Payload, "weight"),
+			ID:      fmt.Sprintf("%v", r.ID),
+			Label:   strVal(r.Payload, "label"),
+			Domain:  strVal(r.Payload, "domain"),
+			RunID:   strVal(r.Payload, "run_id"),
+			Weight:  floatVal(r.Payload, "weight"),
 			Anomaly: boolVal(r.Payload, "anomaly"),
-			Cycle:  intVal(r.Payload, "cycle"),
+			Cycle:   intVal(r.Payload, "cycle"),
 		})
 	}
 	return nodes, nil

@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/meistro57/kae/internal/config"
+	"github.com/meistro57/kae/internal/embeddings"
 	"github.com/meistro57/kae/internal/graph"
 	"github.com/meistro57/kae/internal/ingestion"
 	"github.com/meistro57/kae/internal/llm"
-	"github.com/meistro57/kae/internal/store"
-	"github.com/meistro57/kae/internal/embeddings"
 	"github.com/meistro57/kae/internal/scoring"
+	"github.com/meistro57/kae/internal/store"
 )
 
 type Phase string
@@ -43,11 +43,11 @@ type Event struct {
 }
 
 type Snapshot struct {
-	Nodes     int
-	Edges     int
-	Anomalies int
-	Sources   int
-	Cycles    int
+	Nodes         int
+	Edges         int
+	Anomalies     int
+	Sources       int
+	Cycles        int
 	TopNodes      []string
 	TopWeights    []float64
 	QdrantOK      bool
@@ -64,13 +64,13 @@ type Engine struct {
 	events   chan Event
 	runID    string
 
-	mu      sync.Mutex
-	cycle   int
-	sources int
-	focus   string
-	report  strings.Builder
-	lastThink  strings.Builder
-	running bool
+	mu        sync.Mutex
+	cycle     int
+	sources   int
+	focus     string
+	report    strings.Builder
+	lastThink strings.Builder
+	running   bool
 }
 
 func NewEngine(cfg *config.Config) *Engine {
@@ -217,15 +217,15 @@ func (e *Engine) ingestPhase(topic string) []ingestion.SourceChunk {
 	go func() {
 		defer wg.Done()
 		relevant := ingestion.BooksForTopic(topic)
-			books := make([]*ingestion.GutenbergBook, 0)
-			for _, b := range relevant {
-				book, err := ingestion.GutenbergFetch(b.ID, b.Title)
-				if err == nil {
-					books = append(books, book)
-				}
+		books := make([]*ingestion.GutenbergBook, 0)
+		for _, b := range relevant {
+			book, err := ingestion.GutenbergFetch(b.ID, b.Title)
+			if err == nil {
+				books = append(books, book)
 			}
-			var err error
-			err = nil
+		}
+		var err error
+		err = nil
 		if err != nil || len(books) == 0 {
 			return
 		}
@@ -474,11 +474,11 @@ func (e *Engine) scorePhase(topic string, candidates []*store.Chunk) {
 
 	// Update graph node with contradiction score
 	e.graph.UpsertNode(&graph.Node{
-		ID:                slugify(topic),
-		Label:             topic,
-		Domain:            "scored",
-		Weight:            score.AnomalyScore * 3, // boost anomalous nodes
-		Anomaly:           score.IsAnomaly,
+		ID:                 slugify(topic),
+		Label:              topic,
+		Domain:             "scored",
+		Weight:             score.AnomalyScore * 3, // boost anomalous nodes
+		Anomaly:            score.IsAnomaly,
 		ContradictionScore: score,
 	})
 
@@ -508,14 +508,14 @@ func (e *Engine) reportPhase() {
 	sb.WriteString(fmt.Sprintf("\n## Cycle %d — %s\n", e.cycle, time.Now().Format("15:04:05")))
 	sb.WriteString(fmt.Sprintf("**Graph:** %s\n\n", e.graph.CleanSummary()))
 	sb.WriteString("**Emergent concepts:**\n")
-	    if think := e.lastThink.String(); think != "" {
-        sb.WriteString("**Thinking:**\n")
-        sb.WriteString(think)
-        sb.WriteString("\n\n")
-        e.lastThink.Reset()
-    }
+	if think := e.lastThink.String(); think != "" {
+		sb.WriteString("**Thinking:**\n")
+		sb.WriteString(think)
+		sb.WriteString("\n\n")
+		e.lastThink.Reset()
+	}
 
-    sb.WriteString("**Emergent concepts:**\n")
+	sb.WriteString("**Emergent concepts:**\n")
 	for _, n := range top {
 		flag := ""
 		if n.Anomaly {
@@ -527,7 +527,7 @@ func (e *Engine) reportPhase() {
 		}
 		sb.WriteString(fmt.Sprintf("- %s (weight: %.1f)%s%s\n", n.Label, n.Weight, score, flag))
 	}
-    e.syncNodesToQdrant() 
+	e.syncNodesToQdrant()
 	e.mu.Lock()
 	e.report.WriteString(sb.String())
 	e.mu.Unlock()
@@ -581,11 +581,11 @@ func (e *Engine) snapshot() Snapshot {
 		weights[i] = n.Weight
 	}
 	return Snapshot{
-		Nodes:     e.graph.NodeCount(),
-		Edges:     e.graph.EdgeCount(),
-		Anomalies: e.graph.AnomalyCount(),
-		Sources:   sources,
-		Cycles:    cycles,
+		Nodes:         e.graph.NodeCount(),
+		Edges:         e.graph.EdgeCount(),
+		Anomalies:     e.graph.AnomalyCount(),
+		Sources:       sources,
+		Cycles:        cycles,
 		TopNodes:      labels,
 		TopWeights:    weights,
 		QdrantOK:      true,
