@@ -19,6 +19,8 @@ func main() {
 	cycles := flag.Int("cycles", 0, "Max cycles — 0 means run until graph stabilizes")
 	seed := flag.String("seed", "", "Optional seed topic — leave empty for autonomous start")
 	shared := flag.Bool("shared", false, "Use shared memory across runs")
+	resumeGraph := flag.String("resume-graph", "", "Optional path to a saved graph JSON snapshot to resume from")
+	saveGraphPath := flag.String("save-graph", "", "Optional path to save graph JSON snapshot on exit")
 	debug := flag.Bool("debug", false, "Log debug output to debug.log")
 	flag.Parse()
 
@@ -43,6 +45,8 @@ func main() {
 	cfg.MaxCycles = *cycles
 	cfg.Seed = *seed
 	cfg.SharedMemory = *shared
+	cfg.ResumeGraphPath = *resumeGraph
+	cfg.SaveGraphPath = *saveGraphPath
 
 	eng := agent.NewEngine(cfg)
 	app := ui.NewApp(eng)
@@ -58,6 +62,7 @@ func main() {
 	}
 
 	saveReport(eng)
+	saveGraph(eng, cfg.SaveGraphPath)
 }
 
 func saveReport(eng *agent.Engine) {
@@ -84,4 +89,15 @@ func saveReport(eng *agent.Engine) {
 		return
 	}
 	fmt.Println("report saved:", filename)
+}
+
+func saveGraph(eng *agent.Engine, path string) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	if err := eng.SaveGraph(path); err != nil {
+		fmt.Fprintln(os.Stderr, "could not save graph snapshot:", err)
+		return
+	}
+	fmt.Println("graph snapshot saved:", path)
 }

@@ -8,13 +8,15 @@ import (
 )
 
 type Config struct {
-	OpenRouterKey string
-	Model         string // deep thinking model (R1)
-	FastModel     string // cheap bulk model
-	QdrantURL     string
-	MaxCycles     int
-	Seed          string
-	SharedMemory  bool
+	OpenRouterKey   string
+	Model           string // deep thinking model (R1)
+	FastModel       string // cheap bulk model
+	QdrantURL       string
+	MaxCycles       int
+	Seed            string
+	SharedMemory    bool
+	ResumeGraphPath string
+	SaveGraphPath   string
 	// Embeddings — optional OpenAI-compatible endpoint for semantic vectors.
 	// If unset, falls back to feature hashing.
 	EmbeddingsURL   string

@@ -1,7 +1,9 @@
 package graph
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -34,6 +36,11 @@ type Graph struct {
 	nodes map[string]*Node
 	edges []*Edge
 	adj   map[string][]int
+}
+
+type snapshot struct {
+	Nodes []*Node `json:"nodes"`
+	Edges []*Edge `json:"edges"`
 }
 
 func New() *Graph {
@@ -179,4 +186,71 @@ func (g *Graph) CleanSummary() string {
 
 	return fmt.Sprintf("Nodes: %d | Edges: %d | Anomalies: %d",
 		realNodes, len(g.edges), g.AnomalyCount())
+}
+
+func (g *Graph) SaveToFile(path string) error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	nodes := make([]*Node, 0, len(g.nodes))
+	for _, n := range g.nodes {
+		copyNode := *n
+		nodes = append(nodes, &copyNode)
+	}
+
+	edges := make([]*Edge, len(g.edges))
+	for i, e := range g.edges {
+		copyEdge := *e
+		edges[i] = &copyEdge
+	}
+
+	data, err := json.MarshalIndent(snapshot{
+		Nodes: nodes,
+		Edges: edges,
+	}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal graph: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write graph snapshot: %w", err)
+	}
+
+	return nil
+}
+
+func (g *Graph) LoadFromFile(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read graph snapshot: %w", err)
+	}
+
+	var snap snapshot
+	if err := json.Unmarshal(data, &snap); err != nil {
+		return fmt.Errorf("unmarshal graph snapshot: %w", err)
+	}
+
+	nodes := make(map[string]*Node, len(snap.Nodes))
+	adj := make(map[string][]int, len(snap.Nodes))
+	for _, n := range snap.Nodes {
+		copyNode := *n
+		nodes[copyNode.ID] = &copyNode
+		adj[copyNode.ID] = []int{}
+	}
+
+	edges := make([]*Edge, len(snap.Edges))
+	for i, e := range snap.Edges {
+		copyEdge := *e
+		edges[i] = &copyEdge
+		adj[e.From] = append(adj[e.From], i)
+		adj[e.To] = append(adj[e.To], i)
+	}
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.nodes = nodes
+	g.edges = edges
+	g.adj = adj
+
+	return nil
 }
