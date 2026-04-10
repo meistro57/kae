@@ -5,135 +5,122 @@ import (
 	"testing"
 )
 
-// These are live integration tests — they hit real APIs.
-// Run with: go test ./internal/ingestion/ -v
+func TestParseArxivFeedParsesEntries(t *testing.T) {
+	t.Parallel()
 
-func TestWikiSummary(t *testing.T) {
-	result, err := WikiSummary("interdependence")
+	xmlFeed := `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/1234.5678v1</id>
+    <title>  A Curious Paper  </title>
+    <summary>  A concise abstract. </summary>
+    <author><name>Ada Lovelace</name></author>
+    <author><name>Alan Turing</name></author>
+  </entry>
+</feed>`
+
+	papers, err := parseArxivFeed([]byte(xmlFeed))
 	if err != nil {
-		t.Fatalf("WikiSummary error: %v", err)
+		t.Fatalf("parseArxivFeed returned error: %v", err)
 	}
-	if result.Title == "" {
-		t.Error("expected non-empty Title")
+
+	if len(papers) != 1 {
+		t.Fatalf("expected 1 paper, got %d", len(papers))
 	}
-	if result.Extract == "" {
-		t.Error("expected non-empty Extract")
+
+	paper := papers[0]
+	if paper.ID != "http://arxiv.org/abs/1234.5678v1" {
+		t.Fatalf("unexpected id: %q", paper.ID)
 	}
-	if result.URL == "" {
-		t.Error("expected non-empty URL")
+	if paper.Title != "A Curious Paper" {
+		t.Fatalf("unexpected title: %q", paper.Title)
 	}
-	t.Logf("Title:   %s", result.Title)
-	t.Logf("URL:     %s", result.URL)
-	t.Logf("Extract: %d chars", len(result.Extract))
-	t.Logf("Preview: %s", truncate(result.Extract, 200))
+	if paper.Abstract != "A concise abstract." {
+		t.Fatalf("unexpected abstract: %q", paper.Abstract)
+	}
+	if len(paper.Authors) != 2 || paper.Authors[0] != "Ada Lovelace" || paper.Authors[1] != "Alan Turing" {
+		t.Fatalf("unexpected authors: %#v", paper.Authors)
+	}
 }
 
-func TestWikiSummaryMissingTopic(t *testing.T) {
-	_, err := WikiSummary("xkzqwmblurp_nonexistent_zzzz")
+func TestParseArxivFeedRejectsInvalidXML(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseArxivFeed([]byte("<feed><entry>missing end tags"))
 	if err == nil {
-		t.Error("expected error for nonexistent topic, got nil")
-	}
-	t.Logf("got expected error: %v", err)
-}
-
-func TestArxivSearch(t *testing.T) {
-	results, err := ArxivSearch("interdependence", 3)
-	if err != nil {
-		t.Skipf("ArxivSearch unavailable: %v", err)
-	}
-	if len(results) == 0 {
-		t.Fatal("expected at least one result")
-	}
-	for i, r := range results {
-		if r.Title == "" {
-			t.Errorf("result %d: empty Title", i)
-		}
-		if r.Abstract == "" {
-			t.Errorf("result %d: empty Abstract", i)
-		}
-		if r.URL == "" {
-			t.Errorf("result %d: empty URL", i)
-		}
-		t.Logf("[%d] %s", i+1, r.Title)
-		t.Logf("    URL:      %s", r.URL)
-		t.Logf("    Authors:  %s", strings.Join(r.Authors, ", "))
-		t.Logf("    Abstract: %s", truncate(r.Abstract, 150))
+		t.Fatal("expected parse error for invalid xml")
 	}
 }
 
-func TestArxivDigest(t *testing.T) {
-	results, err := ArxivSearch("autopoiesis", 2)
-	if err != nil {
-		t.Skipf("ArxivSearch unavailable: %v", err)
-	}
-	digest := ArxivDigest(results)
-	if digest == "" {
-		t.Error("expected non-empty digest")
-	}
-	t.Logf("Digest (%d chars):\n%s", len(digest), truncate(digest, 400))
-}
+func TestBooksForTopicReturnsRelevantMatches(t *testing.T) {
+	t.Parallel()
 
-func TestGutenbergSearch(t *testing.T) {
-	results, err := GutenbergSearch("plato", 2)
-	if err != nil {
-		t.Skipf("GutenbergSearch unavailable: %v", err)
+	books := BooksForTopic("quantum consciousness")
+	if len(books) == 0 {
+		t.Fatal("expected relevant books for topic")
 	}
-	if len(results) == 0 {
-		t.Skip("no Gutenberg results — skipping")
-	}
-	for i, r := range results {
-		if r.Title == "" {
-			t.Errorf("result %d: empty Title", i)
+
+	seen := map[int]bool{}
+	for _, b := range books {
+		if seen[b.ID] {
+			t.Fatalf("duplicate book id returned: %d", b.ID)
 		}
-		if r.URL == "" {
-			t.Errorf("result %d: empty URL", i)
-		}
-		t.Logf("[%d] %s", i+1, r.Title)
-		t.Logf("    Authors:  %s", strings.Join(r.Authors, ", "))
-		t.Logf("    URL:      %s", r.URL)
-		t.Logf("    TextURL:  %s", r.TextURL)
-		t.Logf("    Subjects: %s", strings.Join(r.Subjects, "; "))
+		seen[b.ID] = true
+	}
+
+	if !seen[17921] || !seen[8800] || !seen[2411] {
+		t.Fatalf("expected quantum and consciousness recommendations, got ids: %#v", seen)
 	}
 }
 
-func TestGutenbergDigestWithExcerpts(t *testing.T) {
-	results, err := GutenbergSearch("consciousness", 1)
-	if err != nil {
-		t.Skipf("GutenbergSearch unavailable: %v", err)
+func TestBooksForTopicFallsBackToDefault(t *testing.T) {
+	t.Parallel()
+
+	books := BooksForTopic("utterly unrelated topic")
+	if len(books) != 2 {
+		t.Fatalf("expected 2 default books, got %d", len(books))
 	}
-	if len(results) == 0 {
-		t.Skip("no Gutenberg results for topic — skipping excerpt test")
+	if books[0].ID != KAEBookList[0].ID || books[1].ID != KAEBookList[1].ID {
+		t.Fatalf("expected default first two books, got %+v", books)
 	}
-	digest := GutenbergDigest(results, true)
-	if digest == "" {
-		t.Error("expected non-empty digest")
-	}
-	t.Logf("Digest (%d chars):\n%s", len(digest), truncate(digest, 500))
 }
 
-func TestChunk(t *testing.T) {
+func TestStripGutenbergBoilerplateRemovesHeadersAndFooters(t *testing.T) {
+	t.Parallel()
+
+	text := `Intro
+*** START OF THE PROJECT GUTENBERG EBOOK SAMPLE ***
+Body content lives here.
+*** END OF THE PROJECT GUTENBERG EBOOK SAMPLE ***
+Footer`
+	stripped := stripGutenbergBoilerplate(text)
+
+	if strings.Contains(stripped, "START OF THE PROJECT GUTENBERG") || strings.Contains(stripped, "END OF THE PROJECT GUTENBERG") {
+		t.Fatalf("expected boilerplate markers removed, got %q", stripped)
+	}
+	if !strings.Contains(stripped, "Body content lives here.") {
+		t.Fatalf("expected body content preserved, got %q", stripped)
+	}
+}
+
+func TestChunkProducesExpectedOverlap(t *testing.T) {
+	t.Parallel()
+
 	text := "one two three four five six seven eight nine ten"
 	chunks := Chunk(text, 4, 1)
-	if len(chunks) == 0 {
-		t.Fatal("expected chunks")
+
+	expected := []string{
+		"one two three four",
+		"four five six seven",
+		"seven eight nine ten",
 	}
-	for i, c := range chunks {
-		t.Logf("chunk %d: %q", i, c)
+
+	if len(chunks) != len(expected) {
+		t.Fatalf("expected %d chunks, got %d (%#v)", len(expected), len(chunks), chunks)
 	}
-	// verify overlap: last word of chunk N should appear in chunk N+1
-	if len(chunks) > 1 {
-		words0 := strings.Fields(chunks[0])
-		words1 := strings.Fields(chunks[1])
-		last0 := words0[len(words0)-1]
-		if !strings.Contains(chunks[1], last0) {
-			t.Errorf("overlap missing: %q not in %q", last0, words1)
+	for i := range expected {
+		if chunks[i] != expected[i] {
+			t.Fatalf("chunk %d mismatch: want %q got %q", i, expected[i], chunks[i])
 		}
 	}
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }
