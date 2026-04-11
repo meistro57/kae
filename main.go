@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/meistro57/kae/internal/agent"
 	"github.com/meistro57/kae/internal/config"
+	"github.com/meistro57/kae/internal/report"
 	"github.com/meistro57/kae/internal/ui"
 )
 
@@ -66,29 +67,29 @@ func main() {
 }
 
 func saveReport(eng *agent.Engine) {
-	report := eng.Report()
-	if strings.TrimSpace(report) == "" {
+	reportBody := eng.Report()
+	if strings.TrimSpace(reportBody) == "" {
 		return
 	}
-	focus := eng.Focus()
-	if focus == "" {
-		focus = "kae"
-	}
-	slug := strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
-			return r
-		}
-		if r == ' ' {
-			return '_'
-		}
-		return -1
-	}, strings.ToLower(focus))
-	filename := fmt.Sprintf("report_%s_%s.md", slug, time.Now().Format("20060102_150405"))
-	if err := os.WriteFile(filename, []byte(report), 0644); err != nil {
-		fmt.Fprintln(os.Stderr, "could not save report:", err)
+
+	base := report.BuildBaseFilename(eng.Focus(), time.Now())
+	mdPath, htmlPath := report.ArtifactPaths(base)
+
+	if err := report.SaveMarkdown(mdPath, reportBody); err != nil {
+		fmt.Fprintln(os.Stderr, "could not save markdown report:", err)
 		return
 	}
-	fmt.Println("report saved:", filename)
+	fmt.Println("report saved:", mdPath)
+
+	title := fmt.Sprintf("KAE Run Report — %s", eng.Focus())
+	if strings.TrimSpace(eng.Focus()) == "" {
+		title = "KAE Run Report"
+	}
+	if err := report.SaveHTML(htmlPath, title, reportBody); err != nil {
+		fmt.Fprintln(os.Stderr, "could not save html report:", err)
+		return
+	}
+	fmt.Println("html report saved:", htmlPath)
 }
 
 func saveGraph(eng *agent.Engine, path string) {

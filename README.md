@@ -240,7 +240,7 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 - [x] Run-isolated memory (each run scoped by `run_id`, `--shared` to cross-search)
 - [x] Think-block capture — R1 reasoning written to live report each cycle (filtered of meta-instructions)
 - [x] Graph persistence (save/load JSON snapshots with `--save-graph` / `--resume-graph`)
-- [ ] Final report export to markdown/HTML
+- [x] Final report export to markdown/HTML (auto-saves both `.md` and `.html` artefacts on exit)
 - [ ] Anomaly scoring algorithm
 - [ ] Multi-source contradiction detection
 
