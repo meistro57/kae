@@ -9,20 +9,60 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/meistro57/kae/internal/agent"
+	"github.com/meistro57/kae/internal/anomaly"
 	"github.com/meistro57/kae/internal/config"
 	"github.com/meistro57/kae/internal/report"
+	"github.com/meistro57/kae/internal/store"
 	"github.com/meistro57/kae/internal/ui"
 )
 
 func main() {
-	model := flag.String("model", "deepseek/deepseek-r1", "OpenRouter model (default: deepseek-r1 for visible thinking)")
-	fast := flag.String("fast", "google/gemini-2.5-flash", "Fast model for bulk ingestion passes")
-	cycles := flag.Int("cycles", 0, "Max cycles — 0 means run until graph stabilizes")
-	seed := flag.String("seed", "", "Optional seed topic — leave empty for autonomous start")
-	shared := flag.Bool("shared", false, "Use shared memory across runs")
-	resumeGraph := flag.String("resume-graph", "", "Optional path to a saved graph JSON snapshot to resume from")
-	saveGraphPath := flag.String("save-graph", "", "Optional path to save graph JSON snapshot on exit")
-	debug := flag.Bool("debug", false, "Log debug output to debug.log")
+	// ── Core flags ─────────────────────────────────────────────────────────────
+	model := flag.String("model", "deepseek/deepseek-r1",
+		`Primary reasoning model.  Accepts "provider:model" syntax:
+  openrouter:deepseek/deepseek-r1   (default)
+  anthropic:claude-opus-4-6
+  openai:gpt-4o
+  gemini:gemini-2.5-flash
+  ollama:llama3.1`)
+	fast := flag.String("fast", "google/gemini-2.5-flash",
+		"Fast model for bulk passes (same provider:model syntax)")
+	cycles := flag.Int("cycles", 0,
+		"Max cycles — 0 means run until graph stabilizes")
+	seed := flag.String("seed", "",
+		"Optional seed topic — leave empty for autonomous start")
+	shared := flag.Bool("shared", false,
+		"Use shared memory across runs")
+	resumeGraph := flag.String("resume-graph", "",
+		"Optional path to a saved graph JSON snapshot to resume from")
+	saveGraphPath := flag.String("save-graph", "",
+		"Optional path to save graph JSON snapshot on exit")
+	debug := flag.Bool("debug", false,
+		"Log debug output to debug.log")
+
+	// ── Ensemble flags (Tier 1.1) ──────────────────────────────────────────────
+	ensembleMode := flag.Bool("ensemble", false,
+		"Enable multi-model ensemble reasoning")
+	ensembleModels := flag.String("models", "",
+		`Comma-separated list of models for ensemble mode.
+  Example: --models "anthropic:claude-opus-4-6,openai:gpt-4o,gemini:gemini-2.5-flash"`)
+
+	// ── Run controller flags (Tier 1.2) ───────────────────────────────────────
+	noveltyThreshold := flag.Float64("novelty-threshold", 0.05,
+		"New-nodes/total ratio below which a cycle counts as stagnant")
+	stagnationWindow := flag.Int("stagnation-window", 3,
+		"Consecutive stagnant cycles before auto-stop")
+	branchThreshold := flag.Float64("branch-threshold", 0.7,
+		"Ensemble controversy score above which a branch is triggered")
+	maxBranches := flag.Int("max-branches", 4,
+		"Maximum auto-branches per run (0 = unlimited)")
+
+	// ── Meta-analysis flags (Tier 1.3) ────────────────────────────────────────
+	analyze := flag.Bool("analyze", false,
+		"Run cross-run anomaly meta-analysis instead of a new archaeology run")
+	minRuns := flag.Int("min-runs", 2,
+		"Minimum distinct runs for a cluster to appear in meta-analysis")
+
 	flag.Parse()
 
 	if *debug {
@@ -37,10 +77,10 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config error:", err)
-		fmt.Fprintln(os.Stderr, "set OPENROUTER_API_KEY environment variable")
 		os.Exit(1)
 	}
 
+	// Apply flag overrides
 	cfg.Model = *model
 	cfg.FastModel = *fast
 	cfg.MaxCycles = *cycles
@@ -49,6 +89,38 @@ func main() {
 	cfg.ResumeGraphPath = *resumeGraph
 	cfg.SaveGraphPath = *saveGraphPath
 
+	cfg.EnsembleMode = *ensembleMode
+	if *ensembleModels != "" {
+		for _, m := range strings.Split(*ensembleModels, ",") {
+			m = strings.TrimSpace(m)
+			if m != "" {
+				cfg.EnsembleModels = append(cfg.EnsembleModels, m)
+			}
+		}
+	}
+
+	cfg.NoveltyThreshold = *noveltyThreshold
+	cfg.StagnationWindow = *stagnationWindow
+	cfg.BranchThreshold = *branchThreshold
+	cfg.MaxBranches = *maxBranches
+
+	cfg.RunAnalysis = *analyze
+	cfg.MinAnalysisRuns = *minRuns
+
+	// ── Meta-analysis mode ─────────────────────────────────────────────────────
+	if cfg.RunAnalysis {
+		runMetaAnalysis(cfg)
+		return
+	}
+
+	// Require at least one provider key for a normal run
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "Set OPENROUTER_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
+		os.Exit(1)
+	}
+
+	// ── Normal archaeology run ─────────────────────────────────────────────────
 	eng := agent.NewEngine(cfg)
 	app := ui.NewApp(eng)
 
@@ -64,6 +136,39 @@ func main() {
 
 	saveReport(eng)
 	saveGraph(eng, cfg.SaveGraphPath)
+}
+
+// runMetaAnalysis performs cross-run anomaly clustering and prints a report.
+func runMetaAnalysis(cfg *config.Config) {
+	qdrant := store.NewClient(cfg.QdrantURL)
+	ma := anomaly.NewMetaAnalyzer(qdrant, cfg.MinAnalysisRuns)
+
+	fmt.Fprintf(os.Stderr, "Fetching anomaly nodes from Qdrant at %s...\n", cfg.QdrantURL)
+	clusters, err := ma.FindConvergentHeresies()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "meta-analysis error:", err)
+		os.Exit(1)
+	}
+
+	md := anomaly.Report(clusters, cfg.Seed)
+
+	// Write markdown
+	base := report.BuildBaseFilename("meta_analysis", time.Now())
+	mdPath, htmlPath := report.ArtifactPaths(base)
+
+	if err := report.SaveMarkdown(mdPath, md); err != nil {
+		fmt.Fprintln(os.Stderr, "could not save markdown:", err)
+	} else {
+		fmt.Println("meta-analysis saved:", mdPath)
+	}
+
+	if err := report.SaveHTML(htmlPath, "KAE Meta-Analysis — Convergent Heresies", md); err != nil {
+		fmt.Fprintln(os.Stderr, "could not save HTML:", err)
+	} else {
+		fmt.Println("html saved:", htmlPath)
+	}
+
+	fmt.Print(md)
 }
 
 func saveReport(eng *agent.Engine) {

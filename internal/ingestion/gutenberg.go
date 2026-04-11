@@ -1,6 +1,7 @@
 package ingestion
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,14 @@ type GutenbergBook struct {
 	Title   string
 	Authors []string
 	TextURL string
+	Formats map[string]string
+}
+
+// gutendexBook is the API response shape from gutendex.com
+type gutendexBook struct {
+	ID      int               `json:"id"`
+	Title   string            `json:"title"`
+	Formats map[string]string `json:"formats"`
 }
 
 // KAEBookList — verified correct Gutenberg IDs
@@ -122,30 +131,39 @@ func BooksForTopic(topic string) []struct {
 }
 
 func GutenbergFetch(bookID int, title string) (*GutenbergBook, error) {
-	urls := []string{
-		fmt.Sprintf("https://www.gutenberg.org/cache/epub/%d/pg%d.txt", bookID, bookID),
-		fmt.Sprintf("https://www.gutenberg.org/files/%d/%d-0.txt", bookID, bookID),
-		fmt.Sprintf("https://www.gutenberg.org/files/%d/%d.txt", bookID, bookID),
+	// Ask gutendex for the book metadata so we get the real text URL from formats.
+	apiURL := fmt.Sprintf("https://gutendex.com/books/%d/", bookID)
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return nil, fmt.Errorf("gutendex lookup for book %d: %w", bookID, err)
 	}
-	for _, url := range urls {
-		resp, err := http.Get(url)
-		if err != nil || resp.StatusCode != 200 {
-			if resp != nil {
-				resp.Body.Close()
-			}
-			continue
-		}
-		defer resp.Body.Close()
-		b, err := io.ReadAll(resp.Body)
-		if err != nil {
-			continue
-		}
-		text := stripGutenbergBoilerplate(string(b))
-		if len(text) > 500 {
-			return &GutenbergBook{ID: bookID, Title: title, TextURL: url}, nil
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("gutendex returned %d for book %d", resp.StatusCode, bookID)
+	}
+	var meta gutendexBook
+	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
+		return nil, fmt.Errorf("gutendex decode for book %d: %w", bookID, err)
+	}
+
+	// Find the text/plain URL — key is usually "text/plain; charset=utf-8".
+	textURL := ""
+	for mime, u := range meta.Formats {
+		if strings.HasPrefix(mime, "text/plain") {
+			textURL = u
+			break
 		}
 	}
-	return nil, fmt.Errorf("could not fetch book %d", bookID)
+	if textURL == "" {
+		return nil, fmt.Errorf("no text/plain format for book %d", bookID)
+	}
+
+	return &GutenbergBook{
+		ID:      bookID,
+		Title:   title,
+		TextURL: textURL,
+		Formats: meta.Formats,
+	}, nil
 }
 
 func FetchBookText(book *GutenbergBook, maxWords int) (string, error) {

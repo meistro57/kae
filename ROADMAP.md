@@ -12,21 +12,25 @@
 - ✅ Bubbletea/Lipgloss terminal UI
 - ✅ Independent concept convergence across runs
 
-**Gaps Identified:**
-- ⚠️ No cross-run meta-analysis automation
-- ⚠️ Manual intervention required for run comparison
-- ⚠️ Single-model reasoning (no ensemble validation)
+**Tier 1 Additions (complete):**
+- ✅ Multi-provider support — Anthropic, OpenAI, Gemini, Ollama + OpenRouter via unified `provider:model` syntax
+- ✅ Multi-model ensemble reasoning with controversy scoring
+- ✅ Novelty decay detection + auto-stop
+- ✅ Auto-branching on high controversy
+- ✅ Cross-run anomaly clustering (`--analyze`)
+- ✅ Gutenberg ingestion fixed via gutendex formats map
+
+**Remaining Gaps (Tier 2+):**
 - ⚠️ No persistent meta-graph across runs
 - ⚠️ Limited visualization capabilities
 - ⚠️ No active learning or adaptive ingestion
-- ⚠️ Anomalies scattered, not clustered or analyzed
 - ⚠️ No self-improvement feedback loop
 
 ---
 
-## 🎯 TIER 1: Core Engine Enhancements
+## ✅ TIER 1: Core Engine Enhancements — COMPLETE
 
-### 1.1 Multi-Model Reasoning Ensemble
+### 1.1 Multi-Model Reasoning Ensemble ✅
 
 **Goal:** Run same cycle with multiple models simultaneously to detect consensus gaps through model disagreement.
 
@@ -95,7 +99,7 @@ kae analyze controversy --run-id run_123 --threshold 0.7
 
 ---
 
-### 1.2 Recursive Depth Control & Auto-Branching
+### 1.2 Recursive Depth Control & Auto-Branching ✅
 
 **Goal:** Intelligent run termination and parallel exploration of high-anomaly paths.
 
@@ -154,7 +158,7 @@ resource_limits:
 
 ---
 
-### 1.3 Anomaly Clustering & Meta-Analysis
+### 1.3 Anomaly Clustering & Meta-Analysis ✅
 
 **Goal:** Cross-run anomaly detection to find "convergent heresies."
 

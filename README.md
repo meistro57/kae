@@ -26,7 +26,7 @@ The hypothesis: if you feed it everything and let it run unbiased, it arrives at
 ## Requirements
 
 - Go 1.22+
-- An [OpenRouter](https://openrouter.ai) API key
+- At least one LLM provider API key (see table below)
 - Docker (optional — for Qdrant vector memory via `setup.sh`)
 
 ```bash
@@ -36,6 +36,20 @@ sudo apt install golang-go
 # Verify
 go version
 ```
+
+---
+
+## Supported LLM Providers
+
+KAE now supports five backends via a unified `provider:model` syntax:
+
+| Provider | Prefix | Key env var |
+|---|---|---|
+| [OpenRouter](https://openrouter.ai) | `openrouter:` (default, bare names also work) | `OPENROUTER_API_KEY` |
+| [Anthropic](https://console.anthropic.com) | `anthropic:` | `ANTHROPIC_API_KEY` |
+| [OpenAI](https://platform.openai.com) | `openai:` | `OPENAI_API_KEY` |
+| [Google Gemini](https://aistudio.google.com) | `gemini:` | `GEMINI_API_KEY` |
+| [Ollama](https://ollama.ai) (local) | `ollama:` | `OLLAMA_URL` (optional, defaults to localhost:11434) |
 
 ---
 
@@ -49,14 +63,19 @@ cd kae
 ./setup.sh
 
 # Copy the generated .env and fill in your keys
-# OPENROUTER_API_KEY is required; the rest are optional
 ```
 
 `.env` reference:
 
 ```env
-# Required
+# At least one provider key is required
 OPENROUTER_API_KEY=your_key_here
+ANTHROPIC_API_KEY=your_key_here
+OPENAI_API_KEY=your_key_here
+GEMINI_API_KEY=your_key_here
+
+# Local Ollama — defaults to http://localhost:11434
+OLLAMA_URL=http://localhost:11434
 
 # Optional — Qdrant vector memory (setup.sh starts this automatically)
 QDRANT_URL=http://localhost:6333
@@ -79,6 +98,24 @@ go run .
 # Seed it yourself
 go run . --seed "observer effect"
 
+# Use any provider:model
+go run . --model "anthropic:claude-opus-4-6"
+go run . --model "openai:gpt-4o"
+go run . --model "gemini:gemini-2.5-flash"
+go run . --model "ollama:llama3.1"
+
+# Ensemble mode — fan out to multiple providers, measure disagreement
+go run . --ensemble --models "anthropic:claude-opus-4-6,openai:gpt-4o,gemini:gemini-2.5-flash"
+
+# Auto-stop when the graph stagnates (no new nodes for N cycles)
+go run . --novelty-threshold 0.05 --stagnation-window 5
+
+# Auto-branch on high model controversy
+go run . --ensemble --models "..." --branch-threshold 0.7 --max-branches 4
+
+# Cross-run meta-analysis — find "convergent heresies" across past runs
+go run . --analyze --min-runs 3
+
 # Limit cycles
 go run . --cycles 50
 
@@ -87,12 +124,6 @@ go run . --resume-graph graph_snapshot.json --cycles 25
 
 # Save current graph snapshot on exit
 go run . --save-graph graph_snapshot.json
-
-# Use a different thinking model
-go run . --model "anthropic/claude-opus-4"
-
-# Use a different fast/bulk model
-go run . --fast "google/gemini-flash-1.5"
 
 # Search across all previous runs (default: isolated to current run)
 go run . --shared
@@ -154,19 +185,36 @@ kae/
 ├── setup.sh                     # Start Qdrant (v1.17.1) + build binary
 ├── internal/
 │   ├── config/
-│   │   └── config.go            # Config loader (env vars + .env)
+│   │   └── config.go            # Config loader (env vars + .env) — all provider keys
 │   ├── llm/
-│   │   └── client.go            # OpenRouter streaming client + R1 think-block parser
+│   │   ├── provider.go          # Provider interface (Stream, ModelName) + Chunk/Message types
+│   │   ├── factory.go           # NewProvider("provider:model", keys) — routes to backend
+│   │   ├── client.go            # OpenRouter streaming client (satisfies Provider)
+│   │   ├── anthropic.go         # Native Anthropic API — SSE streaming, adaptive thinking
+│   │   ├── openai.go            # Native OpenAI API
+│   │   ├── gemini.go            # Google Gemini API — SSE, thought parts
+│   │   ├── ollama.go            # Local Ollama — NDJSON streaming
+│   │   └── compat.go            # Shared OpenAI-compatible SSE helper
+│   ├── ensemble/
+│   │   └── ensemble.go          # Fan-out to N providers; controversy scoring; dissenter detection
+│   ├── runcontrol/
+│   │   └── controller.go        # Novelty decay tracking; auto-stop; branch triggering
+│   ├── anomaly/
+│   │   ├── cluster.go           # Cosine-similarity clustering of Qdrant anomaly nodes
+│   │   └── reporter.go          # Markdown report generator for meta-analysis
 │   ├── graph/
 │   │   └── graph.go             # Thread-safe knowledge graph (nodes, edges, anomalies)
 │   ├── embeddings/
-│   │   └── embedder.go          # Embedder interface: APIEmbedder (OpenAI-compat) or HashEmbedder fallback
+│   │   └── embedder.go          # APIEmbedder (OpenAI-compat) or HashEmbedder fallback
 │   ├── store/
-│   │   └── qdrant.go            # Qdrant REST client — batch upsert, retry, payload indexes, hnsw_ef
+│   │   ├── qdrant.go            # Qdrant REST client — upsert, search, collections
+│   │   └── scroll.go            # Scroll API — FetchAnomalyNodes for meta-analysis
 │   ├── agent/
-│   │   └── engine.go            # Core agent loop + batch sync queue for Qdrant
+│   │   └── engine.go            # Core agent loop — ensemble, run controller, provider routing
 │   ├── ingestion/
-│   │   └── wiki.go              # Wikipedia / arxiv / Gutenberg ingestion
+│   │   ├── wiki.go              # Wikipedia ingestion
+│   │   ├── arxiv.go             # arxiv paper ingestion
+│   │   └── gutenberg.go         # Project Gutenberg — gutendex API + formats map
 │   └── ui/
 │       └── app.go               # Bubbletea TUI — 4-panel layout
 ```
@@ -176,18 +224,22 @@ kae/
 ## How The Agent Loop Works
 
 ```
-Phase 0  SEED       Agent chooses its own entry concept (or uses --seed)
-Phase 1  INGEST     Pulls sources on current topic, chunks and stores them
-Phase 2  THINK      DeepSeek R1 reasons visibly — you watch it think
-Phase 3  CONNECT    Extracts connections, adds nodes/edges to knowledge graph
-Phase 4  ANOMALY    Scans for where consensus goes silent or contradicts itself
-Phase 5  PLAN       Decides what thread to pull next
-Phase 6  REPORT     Updates the live markdown report
-         └──────────► LOOP back to Phase 1 with new focus
+Phase 0  SEED           Agent chooses its own entry concept (or uses --seed)
+Phase 1  INGEST         Pulls sources on current topic (Wikipedia, arxiv, Gutenberg)
+Phase 2  EMBED          Embeds chunks and stores them in Qdrant
+Phase 3  SEARCH         Retrieves semantically similar passages from vector memory
+Phase 4  THINK          Single model reasons visibly — you watch it think
+         OR
+Phase 4  ENSEMBLE       N models reason in parallel; controversy score computed
+Phase 5  CONNECT        Extracts connections, adds nodes/edges to knowledge graph
+Phase 6  SCORE          Contradiction scoring per topic
+Phase 7  ANOMALY        Scans for where consensus goes silent or contradicts itself
+Phase 8  REPORT         Updates the live markdown report
+         └──────────────► Novelty check → LOOP or STOP
 ```
 
 Runs until:
-- Graph stabilizes (diminishing new connections)
+- Graph novelty drops below `--novelty-threshold` for `--stagnation-window` cycles
 - `--cycles` limit reached
 - You hit `q` or `ctrl+c` (graceful save)
 
@@ -195,14 +247,27 @@ Runs until:
 
 ## Models
 
-KAE uses two models via OpenRouter:
+KAE uses two model roles, each configurable with `provider:model` syntax:
 
 | Role | Default | Purpose |
-|------|---------|---------|
-| **Brain** | `deepseek/deepseek-r1` | Deep reasoning, visible `<think>` blocks, connection-making |
-| **Fast** | `google/gemini-flash-1.5-8b` | Bulk ingestion summarizing, cheap passes |
+|---|---|---|
+| **Brain** (`--model`) | `deepseek/deepseek-r1` | Deep reasoning, visible `<think>` blocks, connection-making |
+| **Fast** (`--fast`) | `google/gemini-2.5-flash` | Bulk passes, seed selection |
 
-You can swap either via CLI flags. The brain model is what you *watch think*. The fast model is the workhorse that processes raw text cheaply so R1 can focus on synthesis.
+Examples:
+
+```bash
+# OpenRouter (default — bare name works)
+--model "deepseek/deepseek-r1"
+
+# Anthropic native API with adaptive thinking
+--model "anthropic:claude-opus-4-6"
+
+# Local Ollama
+--model "ollama:llama3.1"
+```
+
+In **ensemble mode** (`--ensemble`), the brain role is replaced by N providers running in parallel. Each provider independently reasons over the same context; a controversy score is computed from concept-overlap disagreement (Jaccard). Topics with controversy > `--branch-threshold` are flagged as anomalies and can auto-trigger focus branches.
 
 ---
 
@@ -229,20 +294,30 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 
 ## Roadmap
 
+### Tier 0 — Foundation (complete)
 - [x] Core agent loop
 - [x] OpenRouter streaming with R1 think-block parser
 - [x] Thread-safe knowledge graph
 - [x] Bubbletea TUI
-- [x] Wikipedia ingestion wired into live ingest phase
-- [x] arxiv paper ingestion
-- [x] Project Gutenberg ancient texts
-- [x] Qdrant vector memory — batch upsert, retry, payload indexes, configurable semantic embeddings
-- [x] Run-isolated memory (each run scoped by `run_id`, `--shared` to cross-search)
-- [x] Think-block capture — R1 reasoning written to live report each cycle (filtered of meta-instructions)
-- [x] Graph persistence (save/load JSON snapshots with `--save-graph` / `--resume-graph`)
-- [x] Final report export to markdown/HTML (auto-saves both `.md` and `.html` artefacts on exit)
-- [ ] Anomaly scoring algorithm
-- [ ] Multi-source contradiction detection
+- [x] Wikipedia, arxiv, Project Gutenberg ingestion
+- [x] Qdrant vector memory with run isolation
+- [x] Graph persistence (save/load JSON snapshots)
+- [x] Markdown + HTML report export
+
+### Tier 1 — Core Engine Enhancements (complete)
+- [x] **Multi-provider support** — Anthropic, OpenAI, Gemini, Ollama, OpenRouter via unified `provider:model` syntax
+- [x] **Multi-model ensemble reasoning** — parallel fan-out, controversy scoring, dissenter detection
+- [x] **Novelty decay detection** — auto-stop when graph stagnates; configurable threshold + window
+- [x] **Auto-branching** — high ensemble controversy triggers focus branch
+- [x] **Anomaly clustering** — cosine-similarity grouping of anomaly nodes across runs
+- [x] **Cross-run meta-analysis** (`--analyze`) — finds "convergent heresies" (anomalies that appear independently across multiple runs)
+- [x] **Gutenberg URL fix** — uses gutendex formats map instead of hardcoded URL patterns
+
+### Tier 2+ — Coming Next
+- [ ] Persistent meta-graph across runs
+- [ ] Active learning / adaptive ingestion
+- [ ] Self-improvement feedback loop
+- [ ] Extended visualization
 
 ---
 
@@ -260,4 +335,4 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 
 ---
 
-*KAE v0.3 — Built in WSL2 | Go | OpenRouter | Qdrant v1.17.1 | Pure curiosity*
+*KAE v0.4 — Built in WSL2 | Go | OpenRouter · Anthropic · OpenAI · Gemini · Ollama | Qdrant v1.17.1 | Pure curiosity*

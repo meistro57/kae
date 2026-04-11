@@ -8,9 +8,11 @@ import (
 
 	"github.com/meistro57/kae/internal/config"
 	"github.com/meistro57/kae/internal/embeddings"
+	"github.com/meistro57/kae/internal/ensemble"
 	"github.com/meistro57/kae/internal/graph"
 	"github.com/meistro57/kae/internal/ingestion"
 	"github.com/meistro57/kae/internal/llm"
+	"github.com/meistro57/kae/internal/runcontrol"
 	"github.com/meistro57/kae/internal/scoring"
 	"github.com/meistro57/kae/internal/store"
 )
@@ -18,18 +20,19 @@ import (
 type Phase string
 
 const (
-	PhaseIdle    Phase = "IDLE"
-	PhaseSeed    Phase = "SEEDING"
-	PhaseIngest  Phase = "INGESTING"
-	PhaseEmbed   Phase = "EMBEDDING"
-	PhaseSearch  Phase = "SEARCHING MEMORY"
-	PhaseThink   Phase = "THINKING"
-	PhaseConnect Phase = "CONNECTING"
-	PhaseScore   Phase = "SCORING CONTRADICTIONS"
-	PhaseAnomaly Phase = "ANOMALY SCAN"
-	PhasePlan    Phase = "PLANNING"
-	PhaseReport  Phase = "UPDATING REPORT"
-	PhaseStable  Phase = "GRAPH STABLE"
+	PhaseIdle      Phase = "IDLE"
+	PhaseSeed      Phase = "SEEDING"
+	PhaseIngest    Phase = "INGESTING"
+	PhaseEmbed     Phase = "EMBEDDING"
+	PhaseSearch    Phase = "SEARCHING MEMORY"
+	PhaseThink     Phase = "THINKING"
+	PhaseConnect   Phase = "CONNECTING"
+	PhaseScore     Phase = "SCORING CONTRADICTIONS"
+	PhaseAnomaly   Phase = "ANOMALY SCAN"
+	PhasePlan      Phase = "PLANNING"
+	PhaseReport    Phase = "UPDATING REPORT"
+	PhaseStable    Phase = "GRAPH STABLE"
+	PhaseEnsemble  Phase = "ENSEMBLE REASONING"
 )
 
 type Event struct {
@@ -57,29 +60,76 @@ type Snapshot struct {
 type Engine struct {
 	cfg      *config.Config
 	graph    *graph.Graph
-	brain    *llm.Client
-	fast     *llm.Client
+	brain    llm.Provider
+	fast     llm.Provider
+	ens      *ensemble.Ensemble // nil when ensemble mode is off
+	ctrl     *runcontrol.RunController
 	qdrant   *store.Client
 	embedder *embeddings.Embedder
 	events   chan Event
 	runID    string
 
-	mu        sync.Mutex
-	cycle     int
-	sources   int
-	focus     string
-	report    strings.Builder
-	lastThink strings.Builder
-	running   bool
+	mu            sync.Mutex
+	cycle         int
+	sources       int
+	focus         string
+	report        strings.Builder
+	lastThink     strings.Builder
+	running       bool
+	prevNodeCount int
 }
 
 func NewEngine(cfg *config.Config) *Engine {
 	runID := fmt.Sprintf("run_%d", time.Now().Unix())
+
+	keys := llm.ProviderKeys{
+		OpenRouterKey: cfg.OpenRouterKey,
+		AnthropicKey:  cfg.AnthropicKey,
+		OpenAIKey:     cfg.OpenAIKey,
+		GeminiKey:     cfg.GeminiKey,
+		OllamaURL:     cfg.OllamaURL,
+	}
+
+	brain, err := llm.NewProvider(cfg.Model, keys)
+	if err != nil {
+		// Fallback: try OpenRouter with the bare model string
+		brain = llm.NewClient(cfg.OpenRouterKey, cfg.Model)
+	}
+
+	fast, err := llm.NewProvider(cfg.FastModel, keys)
+	if err != nil {
+		fast = llm.NewClient(cfg.OpenRouterKey, cfg.FastModel)
+	}
+
+	// Build ensemble if requested
+	var ens *ensemble.Ensemble
+	if cfg.EnsembleMode && len(cfg.EnsembleModels) > 0 {
+		var providers []llm.Provider
+		for _, pm := range cfg.EnsembleModels {
+			p, err := llm.NewProvider(pm, keys)
+			if err == nil {
+				providers = append(providers, p)
+			}
+		}
+		if len(providers) > 0 {
+			ens = ensemble.New(providers)
+		}
+	}
+
+	ctrl := runcontrol.New(
+		cfg.NoveltyThreshold,
+		cfg.StagnationWindow,
+		cfg.BranchThreshold,
+		cfg.MaxBranches,
+	)
+
 	return &Engine{
 		cfg:      cfg,
 		graph:    graph.New(),
-		brain:    llm.NewClient(cfg.OpenRouterKey, cfg.Model),
-		fast:     llm.NewClient(cfg.OpenRouterKey, cfg.FastModel),
+		brain:    brain,
+		fast:     fast,
+		ens:      ens,
+		ctrl:     ctrl,
 		qdrant:   store.NewClient(cfg.QdrantURL),
 		embedder: embeddings.NewEmbedder(cfg.OpenRouterKey),
 		events:   make(chan Event, 256),
@@ -113,11 +163,9 @@ func (e *Engine) run() {
 		}
 	}
 
-	// Ensure Qdrant collections exist
 	e.emit(Event{Phase: PhaseIdle, Focus: "Initialising memory..."})
 	if err := e.qdrant.EnsureCollections(); err != nil {
 		e.emit(Event{Err: fmt.Errorf("qdrant init: %w", err)})
-		// Non-fatal — continue without persistence
 	}
 
 	e.emit(Event{Phase: PhaseSeed, Focus: "Choosing entry point..."})
@@ -140,35 +188,35 @@ func (e *Engine) run() {
 
 		e.mu.Lock()
 		e.cycle++
+		nodeBefore := e.graph.NodeCount()
 		e.mu.Unlock()
 
 		focus = e.runCycle(focus)
+
+		// Novelty tracking — stop if graph has stagnated
+		nodeAfter := e.graph.NodeCount()
+		newNodes := nodeAfter - nodeBefore
+		if !e.ctrl.RecordNovelty(newNodes, nodeAfter) {
+			e.emit(Event{
+				Phase: PhaseStable,
+				Focus: fmt.Sprintf("Graph stagnated (%d consecutive low-novelty cycles)",
+					e.ctrl.StagnantCycles()),
+			})
+			break
+		}
+
 		time.Sleep(200 * time.Millisecond)
 	}
 }
 
 func (e *Engine) runCycle(topic string) string {
-	// 1. Ingest real sources
 	chunks := e.ingestPhase(topic)
-
-	// 2. Embed and store in Qdrant
 	e.embedPhase(topic, chunks)
-
-	// 3. Search Qdrant for semantically related chunks (candidates)
 	candidates := e.searchPhase(topic)
-
-	// 4. R1 thinks over the actual source passages
 	next := e.thinkPhase(topic, candidates)
-
-	// 5. Score contradictions in what we found
 	e.scorePhase(topic, candidates)
-
-	// 6. Anomaly detection
 	e.anomalyPhase()
-
-	// 7. Update report
 	e.reportPhase()
-
 	return next
 }
 
@@ -228,16 +276,14 @@ func (e *Engine) ingestPhase(topic string) []ingestion.SourceChunk {
 	go func() {
 		defer wg.Done()
 		relevant := ingestion.BooksForTopic(topic)
-		books := make([]*ingestion.GutenbergBook, 0)
+		var books []*ingestion.GutenbergBook
 		for _, b := range relevant {
 			book, err := ingestion.GutenbergFetch(b.ID, b.Title)
 			if err == nil {
 				books = append(books, book)
 			}
 		}
-		var err error
-		err = nil
-		if err != nil || len(books) == 0 {
+		if len(books) == 0 {
 			return
 		}
 		var sc []ingestion.SourceChunk
@@ -270,7 +316,6 @@ func (e *Engine) embedPhase(topic string, chunks []ingestion.SourceChunk) {
 	e.emit(Event{Phase: PhaseEmbed, Focus: topic,
 		OutputChunk: fmt.Sprintf("Embedding %d chunks...", len(chunks))})
 
-	// Embed in batches of 20
 	batchSize := 20
 	for i := 0; i < len(chunks); i += batchSize {
 		end := i + batchSize
@@ -303,7 +348,6 @@ func (e *Engine) embedPhase(topic string, chunks []ingestion.SourceChunk) {
 		}
 	}
 
-	// Also embed and store the topic node itself
 	topicVec, err := e.embedder.Embed(topic)
 	if err == nil {
 		e.graph.UpsertNode(&graph.Node{
@@ -334,9 +378,6 @@ func (e *Engine) searchPhase(topic string) []*store.Chunk {
 		return nil
 	}
 
-	// Find the 10 most semantically similar chunks — these are our candidates
-	// Isolated by default — only search this run's chunks
-	// Use --shared flag to search across all runs
 	var chunkFilter map[string]any
 	if !e.cfg.SharedMemory {
 		chunkFilter = map[string]any{
@@ -358,22 +399,19 @@ func (e *Engine) searchPhase(topic string) []*store.Chunk {
 }
 
 func (e *Engine) thinkPhase(topic string, candidates []*store.Chunk) string {
-	e.emit(Event{Phase: PhaseThink, Focus: topic})
-
-	// Build a context window from the actual source passages
-	var contextBuilder strings.Builder
-	contextBuilder.WriteString("SOURCE PASSAGES (from real ingested documents):\n\n")
-	for i, c := range candidates {
-		if i >= 8 { // limit context
-			break
-		}
-		contextBuilder.WriteString(fmt.Sprintf("--- Source: %s ---\n%s\n\n", c.Source, c.Text))
-	}
-
 	system := `You are an unbiased knowledge archaeologist reasoning over real source material.
 You DO NOT rely on your training data. You reason ONLY from the source passages provided.
 Your job is to find what the evidence actually says — not what consensus expects it to say.
 Follow contradictions. Flag silence. Make connections the sources themselves don't make.`
+
+	var contextBuilder strings.Builder
+	contextBuilder.WriteString("SOURCE PASSAGES (from real ingested documents):\n\n")
+	for i, c := range candidates {
+		if i >= 8 {
+			break
+		}
+		contextBuilder.WriteString(fmt.Sprintf("--- Source: %s ---\n%s\n\n", c.Source, c.Text))
+	}
 
 	msgs := []llm.Message{{
 		Role: "user",
@@ -401,27 +439,61 @@ NEXT: <single next concept>`,
 		),
 	}}
 
-	ch := e.brain.Stream(system, msgs)
-	var output strings.Builder
-	var thinkBuffer strings.Builder
-	for chunk := range ch {
-		switch chunk.Type {
-		case llm.ChunkThink:
-			e.lastThink.WriteString(chunk.Text)
-			thinkBuffer.WriteString(chunk.Text)
-			e.emit(Event{Phase: PhaseThink, Focus: topic, ThinkChunk: chunk.Text})
-		case llm.ChunkText:
-			output.WriteString(chunk.Text)
-			e.emit(Event{Phase: PhaseConnect, Focus: topic, OutputChunk: chunk.Text})
-		case llm.ChunkError:
-			e.emit(Event{Err: chunk.Err})
+	// Use ensemble when available; fall back to single brain.
+	var response string
+	if e.ens != nil {
+		e.emit(Event{Phase: PhaseEnsemble, Focus: topic})
+		result := e.ens.Run(system, msgs)
+		response = result.Merged
+
+		// High controversy → flag the topic as an anomaly candidate
+		if result.Controversy > 0.5 {
+			e.emit(Event{
+				Phase:       PhaseEnsemble,
+				Focus:       topic,
+				OutputChunk: fmt.Sprintf("⚡ High controversy (%.2f) — %d models disagree", result.Controversy, len(result.Responses)),
+			})
+			e.graph.UpsertNode(&graph.Node{
+				ID:      slugify(topic) + "_controversy",
+				Label:   fmt.Sprintf("[ENSEMBLE CONTROVERSY] %s", topic),
+				Domain:  "anomaly",
+				Weight:  2.0 + result.Controversy,
+				Anomaly: true,
+				Notes: fmt.Sprintf("Controversy: %.2f\nDissenters: %s",
+					result.Controversy, strings.Join(result.Dissenting, ", ")),
+			})
 		}
+
+		// Check run controller for branching
+		if e.ctrl.ShouldBranch(result.Controversy) {
+			e.ctrl.RecordBranch()
+			e.emit(Event{
+				Phase:       PhaseEnsemble,
+				Focus:       topic,
+				OutputChunk: fmt.Sprintf("🌿 Branch triggered (controversy=%.2f)", result.Controversy),
+			})
+		}
+	} else {
+		e.emit(Event{Phase: PhaseThink, Focus: topic})
+		ch := e.brain.Stream(system, msgs)
+		var output strings.Builder
+		for chunk := range ch {
+			switch chunk.Type {
+			case llm.ChunkThink:
+				e.lastThink.WriteString(chunk.Text)
+				e.emit(Event{Phase: PhaseThink, Focus: topic, ThinkChunk: chunk.Text})
+			case llm.ChunkText:
+				output.WriteString(chunk.Text)
+				e.emit(Event{Phase: PhaseConnect, Focus: topic, OutputChunk: chunk.Text})
+			case llm.ChunkError:
+				e.emit(Event{Err: chunk.Err})
+			}
+		}
+		response = output.String()
 	}
 
-	response := output.String()
 	connections, contradiction, anomaly, naiveConclusion, next := parseResponse(response)
 
-	// Add connections to graph with source citations
 	for _, conn := range connections {
 		conn = strings.TrimSpace(conn)
 		if conn == "" {
@@ -444,7 +516,6 @@ NEXT: <single next concept>`,
 		})
 	}
 
-	// Store contradiction and anomaly findings
 	if contradiction != "" || anomaly != "" || naiveConclusion != "" {
 		e.graph.UpsertNode(&graph.Node{
 			ID:      slugify(topic) + "_anomaly",
@@ -469,7 +540,6 @@ func (e *Engine) scorePhase(topic string, candidates []*store.Chunk) {
 		return
 	}
 
-	// Build evidence from real source chunks
 	evidence := make([]scoring.Evidence, 0, len(candidates))
 	for _, c := range candidates {
 		stance := scoring.ClassifyStance(topic, c.Text)
@@ -483,12 +553,11 @@ func (e *Engine) scorePhase(topic string, candidates []*store.Chunk) {
 
 	score := scoring.Score(topic, evidence)
 
-	// Update graph node with contradiction score
 	e.graph.UpsertNode(&graph.Node{
 		ID:                 slugify(topic),
 		Label:              topic,
 		Domain:             "scored",
-		Weight:             score.AnomalyScore * 3, // boost anomalous nodes
+		Weight:             score.AnomalyScore * 3,
 		Anomaly:            score.IsAnomaly,
 		ContradictionScore: score,
 	})
@@ -518,7 +587,7 @@ func (e *Engine) reportPhase() {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("\n## Cycle %d — %s\n", e.cycle, time.Now().Format("15:04:05")))
 	sb.WriteString(fmt.Sprintf("**Graph:** %s\n\n", e.graph.CleanSummary()))
-	sb.WriteString("**Emergent concepts:**\n")
+
 	if think := e.lastThink.String(); think != "" {
 		sb.WriteString("**Thinking:**\n")
 		sb.WriteString(think)
@@ -586,7 +655,6 @@ func (e *Engine) snapshot() Snapshot {
 	for i, n := range top {
 		labels[i] = n.Label
 	}
-
 	weights := make([]float64, len(top))
 	for i, n := range top {
 		weights[i] = n.Weight
@@ -604,7 +672,7 @@ func (e *Engine) snapshot() Snapshot {
 	}
 }
 
-func (e *Engine) collectStream(client *llm.Client, system string, msgs []llm.Message) string {
+func (e *Engine) collectStream(client llm.Provider, system string, msgs []llm.Message) string {
 	var sb strings.Builder
 	for chunk := range client.Stream(system, msgs) {
 		if chunk.Type == llm.ChunkText {
@@ -665,6 +733,7 @@ func min(a, b int) int {
 	}
 	return b
 }
+
 func (e *Engine) MaxCycles() int {
 	return e.cfg.MaxCycles
 }
@@ -685,7 +754,6 @@ func (e *Engine) syncNodesToQdrant() {
 	nodes := e.graph.AllNodes()
 	for _, n := range nodes {
 		if len(n.Vector) == 0 {
-			// embed on demand if no vector yet
 			vec, err := e.embedder.Embed(n.Label)
 			if err != nil {
 				continue
@@ -705,9 +773,8 @@ func (e *Engine) syncNodesToQdrant() {
 	}
 }
 
-// cleanThink strips R1 meta-talk from think blocks before writing to report
+// cleanThink strips R1 meta-talk from think blocks before writing to report.
 func cleanThink(s string) string {
-	// Remove lines that are R1 self-instructions rather than actual reasoning
 	junkPhrases := []string{
 		"FINALLY, WRITE THE RESPONSE",
 		"NOW, FORMAT THE RESPONSE",
