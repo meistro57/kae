@@ -23,6 +23,30 @@ The hypothesis: if you feed it everything and let it run unbiased, it arrives at
 
 ---
 
+## Ecosystem
+
+```
+KAE  (Knowledge Archaeology Engine)
+ └── ingests broad human knowledge (Wikipedia, arXiv, Gutenberg, web)
+ └── builds a knowledge graph — nodes, edges, anomalies
+ └── embeds and deposits into Qdrant → kae_nodes
+
+KAE LENS
+ └── event-driven: fires when new KAE data lands in Qdrant
+ └── adaptive density assessment → variable search width
+ └── LLM reasoning (DeepSeek R1 / Gemini Flash via OpenRouter)
+ └── writes findings back to Qdrant → kae_lens_findings
+ └── live dashboard: TUI (Bubbletea) + Web (SSE, port 8080)
+
+KAE ANALYZER
+ └── CLI for post-run inspection: runs, anomalies, convergence, search, export
+
+KAE MCP SERVER
+ └── exposes KAE + Qdrant to any MCP-compatible AI assistant
+```
+
+---
+
 ## Requirements
 
 - Go 1.22+
@@ -41,7 +65,7 @@ go version
 
 ## Supported LLM Providers
 
-KAE now supports five backends via a unified `provider:model` syntax:
+KAE supports five backends via a unified `provider:model` syntax:
 
 | Provider | Prefix | Key env var |
 |---|---|---|
@@ -128,6 +152,9 @@ go run . --save-graph graph_snapshot.json
 # Search across all previous runs (default: isolated to current run)
 go run . --shared
 
+# Headless mode (no TUI — for scripts and MCP)
+go run . --headless --seed "consciousness" --cycles 5
+
 # Debug mode (tail -f debug.log in a second terminal)
 go run . --debug
 
@@ -176,6 +203,93 @@ go build -o kae .
 
 ---
 
+## KAE Lens
+
+KAE Lens is an autonomous post-processing layer that fires when KAE deposits new knowledge into Qdrant. It reasons over the full topology of the ingested graph and surfaces connections, contradictions, clusters, and anomalies that KAE never explicitly made.
+
+```bash
+cd kae-lens
+
+# Start Qdrant (if not already running)
+make qdrant-up
+
+# Configure — edit config/lens.yaml or set env vars:
+# LENS_OPENROUTER_API_KEY, LENS_OPENAI_API_KEY
+
+# Build and run
+make build
+make run-lens
+# TUI in terminal + web dashboard at http://localhost:8080
+```
+
+### Finding Types
+
+| Type | Meaning |
+|---|---|
+| `connection` | Unexpected cross-domain semantic link |
+| `contradiction` | Conflicting claims between knowledge nodes |
+| `cluster` | Emergent concept group KAE never tagged |
+| `anomaly` | Outlier breaking mainstream consensus |
+
+### Adaptive Density
+
+Lens adjusts its search width to local vector density so sparse regions get wide nets and dense regions get tight focused ones:
+
+| Density | Nearby Points | Width | Threshold |
+|---|---|---|---|
+| very_sparse | 0 | 50 | 0.60 |
+| sparse | 1–10 | 35 | 0.60 |
+| medium | 11–50 | 20 | 0.70 |
+| dense | 51–200 | 12 | 0.80 |
+| very_dense | 200+ | 6 | 0.80 |
+
+Lens findings are themselves embedded and stored in `kae_lens_findings` — a future pass can run Lens against its own findings, building third-order knowledge structures.
+
+---
+
+## KAE Analyzer
+
+A standalone CLI for inspecting KAE runs stored in Qdrant.
+
+```bash
+cd kae-analyzer
+go build -o kae-analyzer .
+
+kae-analyzer runs                                    # List all runs
+kae-analyzer analyze --run-id run_1775826869        # Analyze a specific run
+kae-analyzer compare --runs run_123,run_456          # Compare runs for convergence
+kae-analyzer anomalies --min-weight 4.0             # Find high-weight anomalies
+kae-analyzer search --query "pseudo-psychology"      # Search concepts
+kae-analyzer convergence --seed pseudopsychology     # Analyze convergence patterns
+kae-analyzer stats                                   # Overall statistics
+kae-analyzer export                                  # Export analysis to JSON
+```
+
+---
+
+## KAE MCP Server
+
+Exposes KAE and Qdrant to any MCP-compatible AI assistant (Claude, Cursor, etc.).
+
+```bash
+cd mcp
+go build -o kae-mcp .
+./kae-mcp
+```
+
+**Available tools:**
+
+| Tool | Description |
+|---|---|
+| `qdrant_collections` | List all Qdrant collections with vector counts |
+| `qdrant_list_runs` | List all KAE runs with node and anomaly counts |
+| `qdrant_top_nodes` | Get highest-weight emergent concept nodes, optionally filtered by run |
+| `qdrant_search_chunks` | Keyword search over ingested source passages |
+| `qdrant_compare_runs` | Compare runs for independently converging concepts |
+| `kae_start_run` | Start a new KAE run in headless mode, returns the report |
+
+---
+
 ## Project Structure
 
 ```
@@ -217,6 +331,25 @@ kae/
 │   │   └── gutenberg.go         # Project Gutenberg — gutendex API + formats map
 │   └── ui/
 │       └── app.go               # Bubbletea TUI — 4-panel layout
+├── kae-lens/                    # Autonomous post-processing intelligence layer
+│   ├── cmd/lens/main.go         # Lens binary entry point
+│   ├── config/lens.yaml         # Configuration
+│   ├── internal/
+│   │   ├── lens/
+│   │   │   ├── watcher.go       # Polls Qdrant for unprocessed KAE points
+│   │   │   ├── density.go       # Adaptive search width by local vector density
+│   │   │   ├── reasoner.go      # Core agent loop
+│   │   │   ├── synthesizer.go   # LLM reasoning → findings JSON
+│   │   │   ├── writer.go        # Embeds and upserts findings to kae_lens_findings
+│   │   │   ├── tui/             # Bubbletea terminal dashboard
+│   │   │   └── web/             # HTTP + SSE web dashboard (port 8080)
+│   │   ├── llm/                 # OpenRouter + OpenAI client
+│   │   └── qdrantclient/        # Qdrant gRPC client helpers
+│   └── collections/             # Qdrant payload schemas
+├── kae-analyzer/                # Post-run analysis CLI
+│   └── main.go                  # runs, analyze, compare, anomalies, search, convergence, export
+└── mcp/                         # MCP server for AI assistant integration
+    └── main.go                  # JSON-RPC over stdio — 6 tools
 ```
 
 ---
@@ -234,7 +367,7 @@ Phase 4  ENSEMBLE       N models reason in parallel; controversy score computed
 Phase 5  CONNECT        Extracts connections, adds nodes/edges to knowledge graph
 Phase 6  SCORE          Contradiction scoring per topic
 Phase 7  ANOMALY        Scans for where consensus goes silent or contradicts itself
-Phase 8  REPORT         Updates the live markdown report
+Phase 8  REPORT         Updates the live markdown + HTML report
          └──────────────► Novelty check → LOOP or STOP
 ```
 
@@ -278,7 +411,7 @@ KAE uses Qdrant as optional persistent vector memory. When running, every concep
 | Setting | Detail |
 |---------|--------|
 | Version | `qdrant/qdrant:v1.17.1` (pinned) |
-| Collection | `kae_nodes` |
+| Collections | `kae_nodes` (KAE), `kae_lens_findings` (Lens) |
 | Distance | Cosine |
 | Payload indexes | `domain`, `label` (keyword, created before HNSW builds) |
 | Batch size | 64 points per upsert request |
@@ -287,6 +420,7 @@ KAE uses Qdrant as optional persistent vector memory. When running, every concep
 | Embedding fallback | Feature hashing (128-dim, no API needed) |
 | Embedding (configured) | Any OpenAI-compatible endpoint — default `text-embedding-3-small` (1536-dim) |
 | Memory isolation | Each run searches only its own chunks by default — use `--shared` to search across all runs |
+| Network access | Binds to `0.0.0.0:6333` — accessible on LAN by default |
 
 Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with no degradation to the core loop.
 
@@ -311,12 +445,16 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 - [x] **Auto-branching** — high ensemble controversy triggers focus branch
 - [x] **Anomaly clustering** — cosine-similarity grouping of anomaly nodes across runs
 - [x] **Cross-run meta-analysis** (`--analyze`) — finds "convergent heresies" (anomalies that appear independently across multiple runs)
-- [x] **Gutenberg URL fix** — uses gutendex formats map instead of hardcoded URL patterns
+- [x] **Headless mode** (`--headless`) — run without TUI for scripting and MCP integration
+- [x] **KAE Analyzer** — standalone CLI for post-run inspection (runs, anomalies, convergence, search, export)
+- [x] **KAE MCP Server** — exposes KAE + Qdrant to any MCP-compatible AI assistant
+- [x] **KAE Lens** — autonomous post-processing layer; adaptive density reasoning; TUI + web dashboard
 
 ### Tier 2+ — Coming Next
 - [ ] Persistent meta-graph across runs
 - [ ] Active learning / adaptive ingestion
 - [ ] Self-improvement feedback loop
+- [ ] Lens Pass 2 — reason over findings to build third-order knowledge structures
 - [ ] Extended visualization
 
 ---
@@ -335,4 +473,4 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 
 ---
 
-*KAE v0.4 — Built in WSL2 | Go | OpenRouter · Anthropic · OpenAI · Gemini · Ollama | Qdrant v1.17.1 | Pure curiosity*
+*KAE v0.5 — Built in WSL2 | Go | OpenRouter · Anthropic · OpenAI · Gemini · Ollama | Qdrant v1.17.1 | Pure curiosity*
