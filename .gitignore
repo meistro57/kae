@@ -1,5 +1,17 @@
 .env
 .venv
+venv/
 debug.log
+
+# Generated reports
 report*.md
+report*.html
+
+# Compiled binaries
+kae
+kae-headless-test
+kae-analyzer/kae-analyzer
+mcp/kae-mcp
+kae-lens/bin/
+
 think_*.log

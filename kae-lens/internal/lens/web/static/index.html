@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KAE LENS — Knowledge Synthesis Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap');
+
+  :root {
+    --bg:        #0a0a12;
+    --bg2:       #0f0f1e;
+    --bg3:       #14142a;
+    --border:    #1e1e3a;
+    --primary:   #00d4ff;
+    --secondary: #9b59b6;
+    --success:   #2ecc71;
+    --warning:   #f39c12;
+    --danger:    #e74c3c;
+    --muted:     #636e72;
+    --text:      #e0e0e0;
+    --conn:      #00d4ff;
+    --contra:    #e74c3c;
+    --cluster:   #9b59b6;
+    --anomaly:   #f39c12;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ─── Title Bar ─── */
+  #titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    height: 44px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #titlebar .brand {
+    font-family: 'Space Mono', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: 3px;
+  }
+  #titlebar .version { color: var(--muted); font-size: 11px; margin-left: 10px; }
+  #status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .dot.active { background: var(--success); box-shadow: 0 0 6px var(--success); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+  /* ─── Main Layout ─── */
+  #main {
+    display: grid;
+    grid-template-columns: 240px 1fr 300px;
+    grid-template-rows: 1fr;
+    flex: 1;
+    overflow: hidden;
+    gap: 0;
+  }
+
+  /* ─── Panels ─── */
+  .panel {
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel:last-child { border-right: none; }
+
+  .panel-header {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--muted);
+    padding: 10px 16px 8px;
+    border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  /* ─── Stats Panel ─── */
+  #stats-panel { background: var(--bg2); }
+
+  .stat-group {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .stat-group-title {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    font-family: 'Space Mono', monospace;
+  }
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+  }
+  .stat-label { color: var(--muted); font-size: 12px; }
+  .stat-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--primary);
+  }
+  .stat-value.conn  { color: var(--conn); }
+  .stat-value.contra{ color: var(--contra); }
+  .stat-value.cluster{color: var(--cluster);}
+  .stat-value.anomaly{color: var(--anomaly);}
+
+  #batch-status {
+    padding: 10px 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    min-height: 36px;
+  }
+  #batch-status.active { color: var(--success); }
+
+  /* ─── Feed Panel ─── */
+  #feed-panel { background: var(--bg); }
+  #feed {
+    overflow-y: auto;
+    flex: 1;
+    padding: 8px 0;
+    scroll-behavior: smooth;
+  }
+  #feed::-webkit-scrollbar { width: 4px; }
+  #feed::-webkit-scrollbar-track { background: transparent; }
+  #feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .finding-card {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+    animation: slideIn 0.3s ease;
+  }
+  .finding-card:hover { background: var(--bg3); }
+  .finding-card.selected { background: var(--bg3); border-left: 3px solid var(--primary); }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .finding-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .badge {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+  .badge-connection   { color: var(--conn);    border: 1px solid var(--conn);    }
+  .badge-contradiction{ color: var(--contra);  border: 1px solid var(--contra);  }
+  .badge-cluster      { color: var(--cluster); border: 1px solid var(--cluster); }
+  .badge-anomaly      { color: var(--anomaly); border: 1px solid var(--anomaly); }
+
+  .confidence-bar {
+    display: inline-flex;
+    gap: 1px;
+    margin-left: auto;
+  }
+  .confidence-bar span {
+    display: inline-block;
+    width: 5px; height: 12px;
+    border-radius: 1px;
+    background: var(--border);
+  }
+  .confidence-bar span.filled { background: var(--success); }
+  .conf-low .filled  { background: var(--warning); }
+
+  .finding-summary {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text);
+    margin-bottom: 5px;
+  }
+
+  .finding-meta {
+    font-size: 10px;
+    color: var(--muted);
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .domain-tag {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 1px 5px;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  #empty-feed {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    gap: 8px;
+  }
+  #empty-feed .glyph { font-size: 32px; opacity: 0.3; }
+
+  /* ─── Trace Panel ─── */
+  #trace-panel { background: var(--bg2); }
+  #trace-content {
+    overflow-y: auto;
+    flex: 1;
+    padding: 14px 16px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #trace-content .trace-placeholder {
+    display: flex;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.4;
+    font-size: 11px;
+  }
+  #trace-summary {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.5;
+    flex-shrink: 0;
+    min-height: 60px;
+  }
+
+  /* ─── Connection indicator ─── */
+  #conn-indicator {
+    padding: 3px 20px;
+    font-size: 10px;
+    font-family: 'Space Mono', monospace;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- Title Bar -->
+<div id="titlebar">
+  <div style="display:flex;align-items:center;gap:6px;">
+    <span class="brand">KAE LENS</span>
+    <span class="version">v0.1.0</span>
+  </div>
+  <div id="status-badge">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">CONNECTING...</span>
+  </div>
+</div>
+
+<!-- Main Layout -->
+<div id="main">
+
+  <!-- Stats Panel -->
+  <div class="panel" id="stats-panel">
+    <div class="panel-header">System Stats</div>
+    <div id="batch-status">IDLE</div>
+
+    <div class="stat-group">
+      <div class="stat-group-title">Knowledge Base</div>
+      <div class="stat-row">
+        <span class="stat-label">Total points</span>
+        <span class="stat-value" id="stat-total-knowledge">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Total findings</span>
+        <span class="stat-value" id="stat-total-findings">—</span>
+      </div>
+    </div>
+
+    <div class="stat-group">
+      <div class="stat-group-title">This Session</div>
+      <div class="stat-row">
+        <span class="stat-label">Pts processed</span>
+        <span class="stat-value" id="stat-session-processed">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Findings made</span>
+        <span class="stat-value" id="stat-session-findings">0</span>
+      </div>
+    </div>
+
+    <div class="stat-group">
+      <div class="stat-group-title">By Type</div>
+      <div class="stat-row">
+        <span class="stat-label">🔗 Connections</span>
+        <span class="stat-value conn" id="stat-connections">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">⚡ Contradictions</span>
+        <span class="stat-value contra" id="stat-contradictions">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">🌀 Clusters</span>
+        <span class="stat-value cluster" id="stat-clusters">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">🔴 Anomalies</span>
+        <span class="stat-value anomaly" id="stat-anomalies">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feed Panel -->
+  <div class="panel" id="feed-panel">
+    <div class="panel-header">Live Findings Feed</div>
+    <div id="feed">
+      <div id="empty-feed">
+        <div class="glyph">◎</div>
+        <div>Waiting for KAE to ingest data...</div>
+        <div style="font-size:10px;opacity:0.6">Findings will appear here as Lens synthesizes knowledge</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trace Panel -->
+  <div class="panel" id="trace-panel">
+    <div class="panel-header">Reasoning Trace</div>
+    <div id="trace-summary" style="color:var(--muted);font-style:italic;">
+      Select a finding to view reasoning trace
+    </div>
+    <div id="trace-content">
+      <div class="trace-placeholder">← click a finding</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Bottom Bar -->
+<div id="conn-indicator">
+  <span id="conn-label">● disconnected</span>
+  <span id="client-count"></span>
+</div>
+
+<script>
+  // ── State ──
+  let findings = [];
+  let selectedIdx = null;
+  let sessionFindings = 0;
+  let sessionProcessed = 0;
+  let typeCounts = {connections:0, contradictions:0, clusters:0, anomalies:0};
+  let autoScroll = true;
+
+  // ── SSE Connection ──
+  function connect() {
+    const sse = new EventSource('/events');
+
+    sse.addEventListener('open', () => {
+      document.getElementById('status-dot').classList.add('active');
+      document.getElementById('status-text').textContent = 'LIVE';
+      document.getElementById('conn-label').textContent = '● connected';
+    });
+
+    sse.addEventListener('error', () => {
+      document.getElementById('status-dot').classList.remove('active');
+      document.getElementById('status-text').textContent = 'RECONNECTING...';
+      document.getElementById('conn-label').textContent = '● disconnected';
+    });
+
+    sse.addEventListener('finding', e => {
+      const finding = JSON.parse(e.data);
+      addFinding(finding);
+    });
+
+    sse.addEventListener('stats', e => {
+      const stats = JSON.parse(e.data);
+      updateStats(stats);
+    });
+
+    sse.addEventListener('batch_start', e => {
+      const data = JSON.parse(e.data);
+      const el = document.getElementById('batch-status');
+      el.className = 'active';
+      el.textContent = `▶ BATCH ${data.batch_id} — ${data.point_count} points`;
+    });
+
+    sse.addEventListener('batch_done', e => {
+      const data = JSON.parse(e.data);
+      const el = document.getElementById('batch-status');
+      el.className = '';
+      el.textContent = `✓ Done — ${data.findings_count} findings (${data.duration_ms}ms)`;
+      setTimeout(() => { el.textContent = 'IDLE'; }, 4000);
+    });
+  }
+
+  // ── Finding card rendering ──
+  function addFinding(f) {
+    // Remove empty state
+    const empty = document.getElementById('empty-feed');
+    if (empty) empty.remove();
+
+    findings.unshift(f); // newest first
+    sessionFindings++;
+
+    // Update type counters
+    const typeKey = f.type === 'contradiction' ? 'contradictions'
+                  : f.type === 'connection'    ? 'connections'
+                  : f.type === 'cluster'       ? 'clusters'
+                  : 'anomalies';
+    typeCounts[typeKey]++;
+    updateTypeStats();
+
+    const card = createCard(f, 0);
+    const feed = document.getElementById('feed');
+    feed.insertBefore(card, feed.firstChild);
+
+    // Re-index all cards
+    feed.querySelectorAll('.finding-card').forEach((el, i) => {
+      el.dataset.idx = i;
+    });
+
+    document.getElementById('stat-session-findings').textContent = sessionFindings;
+  }
+
+  function createCard(f, idx) {
+    const card = document.createElement('div');
+    card.className = 'finding-card';
+    card.dataset.idx = idx;
+    card.dataset.type = f.type;
+
+    const conf = f.confidence;
+    const bars = Array.from({length:10}, (_,i) =>
+      `<span class="${i < Math.round(conf*10) ? 'filled' : ''}"></span>`
+    ).join('');
+    const confClass = conf < 0.7 ? 'conf-low' : '';
+
+    const domains = (f.domains || []).map(d =>
+      `<span class="domain-tag">${d}</span>`
+    ).join('');
+
+    const age = timeAgo(new Date(f.created_at));
+
+    card.innerHTML = `
+      <div class="finding-top">
+        <span class="badge badge-${f.type}">${badgeLabel(f.type)}</span>
+        <div class="confidence-bar ${confClass}">${bars}</div>
+        <span style="font-size:10px;color:var(--muted);margin-left:4px">${conf.toFixed(2)}</span>
+      </div>
+      <div class="finding-summary">${escapeHtml(f.summary)}</div>
+      <div class="finding-meta">
+        ${domains}
+        <span>${age}</span>
+        <span style="margin-left:auto;opacity:0.5">${f.batch_id || ''}</span>
+      </div>
+    `;
+
+    card.addEventListener('click', () => selectFinding(parseInt(card.dataset.idx)));
+    return card;
+  }
+
+  function selectFinding(idx) {
+    selectedIdx = idx;
+    document.querySelectorAll('.finding-card').forEach(el => {
+      el.classList.toggle('selected', parseInt(el.dataset.idx) === idx);
+    });
+
+    const f = findings[idx];
+    if (!f) return;
+
+    document.getElementById('trace-summary').textContent = f.summary;
+    document.getElementById('trace-summary').style.color = 'var(--text)';
+    document.getElementById('trace-summary').style.fontStyle = 'normal';
+
+    const traceEl = document.getElementById('trace-content');
+    if (f.reasoning_trace) {
+      traceEl.textContent = f.reasoning_trace;
+    } else {
+      traceEl.innerHTML = '<div class="trace-placeholder">(no reasoning trace)</div>';
+    }
+  }
+
+  // ── Stats ──
+  function updateStats(s) {
+    setText('stat-total-knowledge', fmt(s.total_knowledge_points));
+    setText('stat-total-findings', fmt(s.total_findings));
+    setText('stat-session-processed', fmt(s.processed_in_session));
+    setText('stat-session-findings', fmt(s.findings_in_session));
+    setText('stat-connections',    fmt(s.findings_by_type?.connections    || 0));
+    setText('stat-contradictions', fmt(s.findings_by_type?.contradictions || 0));
+    setText('stat-clusters',       fmt(s.findings_by_type?.clusters       || 0));
+    setText('stat-anomalies',      fmt(s.findings_by_type?.anomalies      || 0));
+  }
+
+  function updateTypeStats() {
+    setText('stat-connections',    typeCounts.connections);
+    setText('stat-contradictions', typeCounts.contradictions);
+    setText('stat-clusters',       typeCounts.clusters);
+    setText('stat-anomalies',      typeCounts.anomalies);
+    setText('stat-session-findings', sessionFindings);
+  }
+
+  // ── Utilities ──
+  function badgeLabel(type) {
+    return {connection:'🔗 Connection', contradiction:'⚡ Contradiction',
+            cluster:'🌀 Cluster', anomaly:'🔴 Anomaly'}[type] || type;
+  }
+
+  function timeAgo(date) {
+    const s = Math.floor((Date.now() - date) / 1000);
+    if (s < 60)  return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s/60)}m ago`;
+    return `${Math.floor(s/3600)}h ago`;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  function fmt(n) {
+    if (n == null || n === '—') return '—';
+    return Number(n).toLocaleString();
+  }
+
+  // ── Poll stats every 15s ──
+  setInterval(() => {
+    fetch('/api/stats').then(r => r.json()).then(updateStats).catch(() => {});
+  }, 15000);
+
+  // ── Boot ──
+  connect();
+</script>
+</body>
+</html>

@@ -1,14 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
-	"os/exec"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/olekukonko/tablewriter"
@@ -51,7 +51,7 @@ Examples:
   kae-analyzer convergence --seed pseudopsychology     # Analyze convergence`,
 	}
 
-	rootCmd.PersistentFlags().StringVar(&qdrantURL, "url", "localhost:6333", "Qdrant server URL")
+	rootCmd.PersistentFlags().StringVar(&qdrantURL, "url", "http://localhost:6333", "Qdrant server URL")
 	rootCmd.PersistentFlags().StringVar(&collection, "collection", "kae_nodes", "Qdrant collection name")
 
 	rootCmd.AddCommand(
@@ -513,96 +513,136 @@ func exportCmd() *cobra.Command {
 	return cmd
 }
 
-// Real Qdrant integration via kae-qdrant MCP server
+// qdrantPost sends a POST request to the Qdrant REST API and returns the decoded body.
+func qdrantPost(path string, body any) (map[string]any, error) {
+	b, _ := json.Marshal(body)
+	base := qdrantURL
+	if !strings.HasPrefix(base, "http") {
+		base = "http://" + base
+	}
+	resp, err := http.Post(base+path, "application/json", bytes.NewReader(b))
+	if err != nil {
+		return nil, fmt.Errorf("qdrant unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	rb, _ := io.ReadAll(resp.Body)
+	var result map[string]any
+	if err := json.Unmarshal(rb, &result); err != nil {
+		return nil, fmt.Errorf("qdrant response parse: %w", err)
+	}
+	return result, nil
+}
 
 func getAllRuns() []KAERun {
-	cmd := exec.Command("npx", "-y", "@modelcontextprotocol/inspector", "node", "/home/mark/.local/share/claude/mcp/kae-qdrant/build/index.js")
-	cmd.Env = append(os.Environ(), "MCP_TOOL_CALL=qdrant_list_runs")
-
-	output, err := cmd.CombinedOutput()
+	data, err := qdrantPost("/collections/kae_nodes/points/scroll", map[string]any{
+		"limit":        1000,
+		"with_payload": true,
+		"with_vector":  false,
+	})
 	if err != nil {
-		log.Printf("Warning: Failed to call MCP server: %v\n", err)
+		log.Printf("Warning: Failed to query Qdrant: %v\n", err)
 		return []KAERun{}
 	}
 
-	// Parse the markdown output
-	runs := parseRunsFromMarkdown(string(output))
-	return runs
+	result, _ := data["result"].(map[string]any)
+	points, _ := result["points"].([]any)
+
+	type runStats struct {
+		count   int
+		anomaly int
+		maxW    float64
+	}
+	runs := make(map[string]*runStats)
+
+	for _, p := range points {
+		pt, _ := p.(map[string]any)
+		payload, _ := pt["payload"].(map[string]any)
+		runID, _ := payload["run_id"].(string)
+		if runID == "" {
+			continue
+		}
+		if runs[runID] == nil {
+			runs[runID] = &runStats{}
+		}
+		r := runs[runID]
+		r.count++
+		if w, ok := payload["weight"].(float64); ok && w > r.maxW {
+			r.maxW = w
+		}
+		if a, ok := payload["anomaly"].(bool); ok && a {
+			r.anomaly++
+		}
+	}
+
+	out := make([]KAERun, 0, len(runs))
+	for id, r := range runs {
+		out = append(out, KAERun{
+			ID:        id,
+			Nodes:     r.count,
+			Anomalies: r.anomaly,
+			MaxWeight: r.maxW,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 func getRunNodes(runID string, limit int) []ConceptNode {
-	cmd := exec.Command("npx", "-y", "@modelcontextprotocol/inspector", "node", "/home/mark/.local/share/claude/mcp/kae-qdrant/build/index.js")
-	cmd.Env = append(os.Environ(),
-		"MCP_TOOL_CALL=qdrant_top_nodes",
-		fmt.Sprintf("MCP_RUN_ID=%s", runID),
-		fmt.Sprintf("MCP_LIMIT=%d", limit),
-	)
+	body := map[string]any{
+		"limit":        limit * 3, // fetch extra to sort by weight
+		"with_payload": true,
+		"with_vector":  false,
+	}
+	if runID != "" {
+		body["filter"] = map[string]any{
+			"must": []map[string]any{
+				{"key": "run_id", "match": map[string]any{"value": runID}},
+			},
+		}
+	}
 
-	output, err := cmd.CombinedOutput()
+	data, err := qdrantPost("/collections/kae_nodes/points/scroll", body)
 	if err != nil {
-		log.Printf("Warning: Failed to call MCP server: %v\n", err)
+		log.Printf("Warning: Failed to query Qdrant: %v\n", err)
 		return []ConceptNode{}
 	}
 
-	// Parse the markdown output
-	nodes := parseNodesFromMarkdown(string(output), runID)
-	return nodes
-}
+	result, _ := data["result"].(map[string]any)
+	points, _ := result["points"].([]any)
 
-func parseRunsFromMarkdown(markdown string) []KAERun {
-	runs := []KAERun{}
-
-	// Match pattern: **run_TIMESTAMP**\n  nodes: N | anomalies: N | max weight: N.NN
-	runPattern := regexp.MustCompile(`\*\*(run_\d+)\*\*\s+nodes: (\d+) \| anomalies: (\d+) \| max weight: ([\d.]+)`)
-	matches := runPattern.FindAllStringSubmatch(markdown, -1)
-
-	for _, match := range matches {
-		if len(match) == 5 {
-			nodes, _ := strconv.Atoi(match[2])
-			anomalies, _ := strconv.Atoi(match[3])
-			maxWeight, _ := strconv.ParseFloat(match[4], 64)
-
-			runs = append(runs, KAERun{
-				ID:        match[1],
-				Nodes:     nodes,
-				Anomalies: anomalies,
-				MaxWeight: maxWeight,
-			})
+	nodes := make([]ConceptNode, 0, len(points))
+	for _, p := range points {
+		pt, _ := p.(map[string]any)
+		payload, _ := pt["payload"].(map[string]any)
+		label, _ := payload["label"].(string)
+		if label == "" {
+			continue
 		}
+		weight, _ := payload["weight"].(float64)
+		anomaly, _ := payload["anomaly"].(bool)
+		domain, _ := payload["domain"].(string)
+		rid, _ := payload["run_id"].(string)
+		cycle := 0
+		switch v := payload["cycle"].(type) {
+		case float64:
+			cycle = int(v)
+		case int:
+			cycle = v
+		}
+		nodes = append(nodes, ConceptNode{
+			Name:      label,
+			Weight:    weight,
+			Cycle:     cycle,
+			RunID:     rid,
+			IsAnomaly: anomaly,
+			Domain:    domain,
+		})
 	}
 
-	return runs
-}
-
-func parseNodesFromMarkdown(markdown string, runID string) []ConceptNode {
-	nodes := []ConceptNode{}
-
-	// Match pattern: N. **Name** [⚠]?\n   weight: N.NN | domain: X | cycle: N
-	// Handle both normal and [ANOMALY] prefixed names
-	nodePattern := regexp.MustCompile(`\d+\. \*\*(?:\[ANOMALY\] )?(.+?)\*\*( ⚠)?\s+weight: ([\d.]+) \| domain: (\w+) \| cycle: (\d+)`)
-	matches := nodePattern.FindAllStringSubmatch(markdown, -1)
-
-	for _, match := range matches {
-		if len(match) >= 6 {
-			weight, _ := strconv.ParseFloat(match[3], 64)
-			cycle, _ := strconv.Atoi(match[5])
-			isAnomaly := strings.Contains(match[2], "⚠") || strings.Contains(match[1], "ANOMALY")
-
-			// Clean name - remove ANOMALY prefix and extra asterisks
-			name := strings.TrimPrefix(match[1], "[ANOMALY] ")
-			name = strings.Trim(name, "*")
-
-			nodes = append(nodes, ConceptNode{
-				Name:      name,
-				Weight:    weight,
-				Cycle:     cycle,
-				RunID:     runID,
-				IsAnomaly: isAnomaly,
-				Domain:    match[4],
-			})
-		}
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Weight > nodes[j].Weight })
+	if len(nodes) > limit {
+		nodes = nodes[:limit]
 	}
-
 	return nodes
 }
 

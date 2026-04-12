@@ -8,8 +8,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ── MCP protocol types ────────────────────────────────────────────────────────
@@ -420,6 +423,89 @@ func toolCompareRuns(runIDs []string) (string, error) {
 	return sb.String(), nil
 }
 
+func toolStartRun(seed string, cycles int, model string) (string, error) {
+	// Find kae binary path (same directory as this mcp binary, parent of mcp dir)
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("could not locate executable: %w", err)
+	}
+	
+	kaePath := filepath.Join(filepath.Dir(exePath), "..", "kae")
+	if _, err := os.Stat(kaePath); err != nil {
+		return "", fmt.Errorf("kae binary not found at %s: %w", kaePath, err)
+	}
+	
+	// Build command
+	args := []string{"-seed", seed, "-cycles", fmt.Sprintf("%d", cycles), "-headless"}
+	if model != "" {
+		args = append(args, "-model", model)
+	}
+	
+	cmd := exec.Command(kaePath, args...)
+	cmd.Dir = filepath.Join(filepath.Dir(exePath), "..") // ~/kae
+	
+	// Capture both stdout and stderr
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+	
+	// Run with timeout (cycles * 90 seconds per cycle max)
+	timeoutSec := cycles * 90
+	if timeoutSec > 600 {
+		timeoutSec = 600 // max 10 minutes
+	}
+	
+	// Start and wait with timeout
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("failed to start kae: %w", err)
+	}
+	
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	
+	select {
+	case err := <-done:
+		if err != nil {
+			return "", fmt.Errorf("kae run failed: %w\nstderr:\n%s", err, stderrBuf.String())
+		}
+	case <-time.After(time.Duration(timeoutSec) * time.Second):
+		cmd.Process.Kill()
+		return "", fmt.Errorf("kae run timed out after %d seconds", timeoutSec)
+	}
+	
+	// Combine output
+	output := stderrBuf.String()
+	if stdoutBuf.Len() > 0 {
+		output = stdoutBuf.String() + "\n" + output
+	}
+	
+	// Extract report from output (look for markdown report pattern)
+	lines := strings.Split(output, "\n")
+	var reportLines []string
+	inReport := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, "## Cycle") {
+			inReport = true
+		}
+		if inReport {
+			reportLines = append(reportLines, line)
+		}
+	}
+	
+	if len(reportLines) > 0 {
+		report := strings.Join(reportLines, "\n")
+		return fmt.Sprintf("## KAE Run Completed\n\nSeed: `%s` | Cycles: %d\n\n%s", seed, cycles, report), nil
+	}
+	
+	// Fallback: return last 50 lines of output
+	start := len(lines) - 50
+	if start < 0 {
+		start = 0
+	}
+	summary := strings.Join(lines[start:], "\n")
+	return fmt.Sprintf("## KAE Run Output (summary)\n\nSeed: `%s` | Cycles: %d\n\n```\n%s\n```", seed, cycles, summary), nil
+}
+
 // ── MCP server loop ───────────────────────────────────────────────────────────
 
 var tools = []ToolDef{
@@ -465,6 +551,19 @@ var tools = []ToolDef{
 				"run_ids": {Type: "string", Description: "Comma-separated list of run IDs to compare (e.g. 'run_111,run_222')"},
 			},
 			Required: []string{"run_ids"},
+		},
+	},
+	{
+		Name:        "kae_start_run",
+		Description: "Start a new KAE archaeology run in headless mode. Returns the run report.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"seed":   {Type: "string", Description: "Seed topic to explore (e.g. 'consciousness', 'quantum gravity')"},
+				"cycles": {Type: "integer", Description: "Number of cycles to run (default 3, max 10)"},
+				"model":  {Type: "string", Description: "Optional model override (e.g. 'deepseek/deepseek-r1', 'google/gemini-2.5-flash')"},
+			},
+			Required: []string{"seed"},
 		},
 	},
 }
@@ -560,6 +659,18 @@ func dispatchTool(name string, args map[string]any) (string, error) {
 			}
 		}
 		return toolCompareRuns(runIDs)
+
+	case "kae_start_run":
+		seed, _ := args["seed"].(string)
+		if seed == "" {
+			return "", fmt.Errorf("seed is required")
+		}
+		cycles := 3
+		if c, ok := args["cycles"].(float64); ok {
+			cycles = int(c)
+		}
+		model, _ := args["model"].(string)
+		return toolStartRun(seed, cycles, model)
 
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
