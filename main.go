@@ -186,7 +186,7 @@ func main() {
 		saveReport(eng)
 		saveGraph(eng, cfg.SaveGraphPath)
 		if !*noMetaGraph {
-			mergeMetaGraph(eng.RunID(), cfg.QdrantURL, *attractorMinRuns)
+			go mergeMetaGraph(eng.RunID(), cfg.QdrantURL, *attractorMinRuns)
 		}
 
 		if *autoRestart && eng.StoppedByStagnation() {
