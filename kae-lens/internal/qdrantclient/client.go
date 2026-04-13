@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/qdrant/go-client/qdrant"
 	"google.golang.org/grpc"
@@ -105,14 +106,15 @@ func (c *Client) UpsertPoints(ctx context.Context, collection string, points []*
 	return nil
 }
 
-// ScrollUnprocessed scrolls through kae_knowledge for points where lens_processed == false.
+// ScrollUnprocessed scrolls for points where lens_processed is absent or false.
+// Uses must_not so that points without the field (new KAE output) are included.
 func (c *Client) ScrollUnprocessed(ctx context.Context, collection string, limit uint32) ([]*qdrant.RetrievedPoint, error) {
-	falseVal := false
+	trueVal := true
 	result, err := c.inner.Scroll(ctx, &qdrant.ScrollPoints{
 		CollectionName: collection,
 		Filter: &qdrant.Filter{
-			Must: []*qdrant.Condition{
-				qdrant.NewMatchBool("lens_processed", falseVal),
+			MustNot: []*qdrant.Condition{
+				qdrant.NewMatchBool("lens_processed", trueVal),
 			},
 		},
 		Limit:       &limit,
@@ -126,10 +128,11 @@ func (c *Client) ScrollUnprocessed(ctx context.Context, collection string, limit
 }
 
 // MarkProcessed sets lens_processed=true on a list of point IDs.
+// IDs may be UUIDs or decimal-string representations of uint64 numeric IDs.
 func (c *Client) MarkProcessed(ctx context.Context, collection string, ids []string) error {
 	pointIDs := make([]*qdrant.PointId, len(ids))
 	for i, id := range ids {
-		pointIDs[i] = qdrant.NewID(id)
+		pointIDs[i] = ParsePointID(id)
 	}
 
 	wait := true
@@ -195,6 +198,27 @@ func PayloadToMap(payload map[string]*qdrant.Value) map[string]any {
 // PayloadToJSON marshals a Qdrant payload to JSON bytes.
 func PayloadToJSON(payload map[string]*qdrant.Value) ([]byte, error) {
 	return json.Marshal(PayloadToMap(payload))
+}
+
+// PointIDStr returns a stable string representation of a PointId,
+// handling both UUID and numeric ID forms.
+func PointIDStr(id *qdrant.PointId) string {
+	if id == nil {
+		return ""
+	}
+	if uuid := id.GetUuid(); uuid != "" {
+		return uuid
+	}
+	return strconv.FormatUint(id.GetNum(), 10)
+}
+
+// ParsePointID parses a string ID back into a *qdrant.PointId.
+// Numeric decimal strings become numeric IDs; anything else becomes a UUID.
+func ParsePointID(s string) *qdrant.PointId {
+	if n, err := strconv.ParseUint(s, 10, 64); err == nil {
+		return qdrant.NewIDNum(n)
+	}
+	return qdrant.NewID(s)
 }
 
 func valueToAny(v *qdrant.Value) any {

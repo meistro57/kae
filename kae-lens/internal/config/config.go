@@ -99,14 +99,15 @@ func Load(path string) (*LensConfig, error) {
 		return nil, fmt.Errorf("parsing config file: %w", err)
 	}
 
-	// Environment variable overrides for secrets
+	// Environment variable overrides for secrets.
+	// LENS_* variants take priority; fall back to the shared KAE env vars.
 	if v := os.Getenv("LENS_QDRANT_API_KEY"); v != "" {
 		cfg.Qdrant.APIKey = v
 	}
-	if v := os.Getenv("LENS_OPENROUTER_API_KEY"); v != "" {
+	if v := firstEnv("LENS_OPENROUTER_API_KEY", "OPENROUTER_API_KEY"); v != "" {
 		cfg.LLM.OpenRouterAPIKey = v
 	}
-	if v := os.Getenv("LENS_OPENAI_API_KEY"); v != "" {
+	if v := firstEnv("LENS_OPENAI_API_KEY", "OPENAI_API_KEY"); v != "" {
 		cfg.Embedding.OpenAIAPIKey = v
 	}
 
@@ -115,6 +116,16 @@ func Load(path string) (*LensConfig, error) {
 	}
 
 	return &cfg, nil
+}
+
+// firstEnv returns the value of the first non-empty environment variable.
+func firstEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (c *LensConfig) validate() error {

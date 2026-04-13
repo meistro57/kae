@@ -2,7 +2,7 @@ qdrant:
   host: "localhost"
   port: 6334
   api_key: ""
-  knowledge_collection: "kae_knowledge"
+  knowledge_collection: "kae_chunks"
   findings_collection: "kae_lens_findings"
 
 watcher:
@@ -28,7 +28,7 @@ density:
 
 llm:
   reasoning_model: "deepseek/deepseek-r1"
-  fast_model: "google/gemini-flash-1.5"
+  fast_model: "google/gemini-2.5-flash"
   openrouter_base_url: "https://openrouter.ai/api/v1"
   openrouter_api_key: ""
   min_confidence: 0.65

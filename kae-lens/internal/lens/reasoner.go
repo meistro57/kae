@@ -2,7 +2,6 @@ package lens
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -152,39 +151,81 @@ func (r *Reasoner) processPoint(ctx context.Context, batchID string, anchor *anc
 }
 
 // parseAnchor extracts a typed anchorPoint from a raw Qdrant RetrievedPoint.
+// Handles both the kae_knowledge schema (title/content/domain) and the
+// kae_chunks schema (source/text/topic) that KAE actually writes.
 func parseAnchor(p *qdrant.RetrievedPoint) (*anchorPoint, error) {
 	if p.Id == nil {
 		return nil, fmt.Errorf("point has no ID")
 	}
 
-	// Extract vector
-	var vec []float32
-	if p.Vectors != nil {
-		if dv := p.Vectors.GetVector(); dv != nil {
-			vec = dv.Data
-		}
-	}
+	// Extract vector — v1.17+ uses VectorsOutput: GetVector().GetDense().GetData()
+	vec := extractVector(p.Vectors)
 	if len(vec) == 0 {
 		return nil, fmt.Errorf("point has no vector")
 	}
 
-	// Extract payload fields
+	// Extract payload — support both kae_knowledge and kae_chunks schemas
 	payload := qdrantclient.PayloadToMap(p.Payload)
-	payloadJSON, _ := json.Marshal(payload)
 
-	var kp collections.KnowledgePoint
-	if err := json.Unmarshal(payloadJSON, &kp); err != nil {
-		return nil, fmt.Errorf("parsing payload: %w", err)
+	title   := stringFromMap(payload, "title", "source")
+	content := stringFromMap(payload, "content", "text")
+	domain  := stringFromMap(payload, "domain", "topic")
+	url     := stringFromMap(payload, "url")
+
+	// Use a sensible fallback title so logs are readable
+	if title == "" {
+		title = fmt.Sprintf("point-%s", qdrantclient.PointIDStr(p.Id))
 	}
 
 	return &anchorPoint{
-		id:      p.Id.GetUuid(),
-		title:   kp.Title,
-		domain:  kp.Domain,
-		content: kp.Content,
-		url:     kp.URL,
+		id:      qdrantclient.PointIDStr(p.Id),
+		title:   title,
+		domain:  domain,
+		content: content,
+		url:     url,
 		vector:  vec,
 	}, nil
+}
+
+// extractVector pulls the float32 dense vector out of a VectorsOutput.
+// Qdrant go-client v1.17+ changed the type from *Vectors to *VectorsOutput,
+// with data at .GetVector().GetDense().GetData().
+func extractVector(vo *qdrant.VectorsOutput) []float32 {
+	if vo == nil {
+		return nil
+	}
+	if v := vo.GetVector(); v != nil {
+		if d := v.GetDense(); d != nil {
+			return d.GetData()
+		}
+	}
+	// Named vectors — grab the default ("") or first available
+	if named := vo.GetVectors(); named != nil {
+		vecs := named.GetVectors()
+		if v, ok := vecs[""]; ok {
+			if d := v.GetDense(); d != nil {
+				return d.GetData()
+			}
+		}
+		for _, v := range vecs {
+			if d := v.GetDense(); d != nil {
+				return d.GetData()
+			}
+		}
+	}
+	return nil
+}
+
+// stringFromMap returns the first non-empty string value for the given keys.
+func stringFromMap(m map[string]any, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 func (r *Reasoner) emit(event any) {

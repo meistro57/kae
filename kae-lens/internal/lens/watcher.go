@@ -83,11 +83,11 @@ func (w *Watcher) poll(ctx context.Context) {
 
 	// Extract IDs and mark processed optimistically before reasoning starts.
 	// This prevents duplicate processing if the watcher fires again before
-	// the batch completes.
+	// the batch completes. IDs may be UUIDs or numeric (kae_chunks uses uint64).
 	ids := make([]string, 0, len(points))
 	for _, p := range points {
 		if p.Id != nil {
-			ids = append(ids, p.Id.GetUuid())
+			ids = append(ids, qdrantclient.PointIDStr(p.Id))
 		}
 	}
 

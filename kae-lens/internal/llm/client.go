@@ -33,12 +33,18 @@ func New(cfg Config) *Client {
 	orConfig.BaseURL = cfg.OpenRouterBaseURL
 	orClient := openai.NewClientWithConfig(orConfig)
 
-	// OpenAI client (embeddings)
-	oaiClient := openai.NewClient(cfg.OpenAIAPIKey)
+	// Embedding client: use OpenAI if a key is set, otherwise fall back to
+	// OpenRouter which also serves text-embedding-3-small at the same endpoint.
+	var embeddingClient *openai.Client
+	if cfg.OpenAIAPIKey != "" {
+		embeddingClient = openai.NewClient(cfg.OpenAIAPIKey)
+	} else {
+		embeddingClient = orClient
+	}
 
 	return &Client{
 		inner:           orClient,
-		embeddingClient: oaiClient,
+		embeddingClient: embeddingClient,
 		reasoningModel:  cfg.ReasoningModel,
 		fastModel:       cfg.FastModel,
 		embeddingModel:  cfg.EmbeddingModel,
