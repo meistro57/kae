@@ -29,10 +29,10 @@ The hypothesis: if you feed it everything and let it run unbiased, it arrives at
 KAE  (Knowledge Archaeology Engine)
  └── ingests broad human knowledge (Wikipedia, arXiv, Gutenberg, web)
  └── builds a knowledge graph — nodes, edges, anomalies
- └── embeds and deposits into Qdrant → kae_nodes
+ └── embeds and deposits into Qdrant → kae_chunks (text) + kae_nodes (graph)
 
 KAE LENS
- └── event-driven: fires when new KAE data lands in Qdrant
+ └── event-driven: reads kae_chunks, fires when new points appear
  └── adaptive density assessment → variable search width
  └── LLM reasoning (DeepSeek R1 / Gemini Flash via OpenRouter)
  └── writes findings back to Qdrant → kae_lens_findings
@@ -213,8 +213,8 @@ cd kae-lens
 # Start Qdrant (if not already running)
 make qdrant-up
 
-# Configure — edit config/lens.yaml or set env vars:
-# LENS_OPENROUTER_API_KEY, LENS_OPENAI_API_KEY
+# Configure — Lens picks up your existing KAE .env keys automatically:
+# OPENROUTER_API_KEY (required), OPENAI_API_KEY (optional, falls back to OpenRouter)
 
 # Build and run
 make build
@@ -411,7 +411,7 @@ KAE uses Qdrant as optional persistent vector memory. When running, every concep
 | Setting | Detail |
 |---------|--------|
 | Version | `qdrant/qdrant:v1.17.1` (pinned) |
-| Collections | `kae_nodes` (KAE), `kae_lens_findings` (Lens) |
+| Collections | `kae_chunks` (text chunks), `kae_nodes` (graph), `kae_lens_findings` (Lens findings) |
 | Distance | Cosine |
 | Payload indexes | `domain`, `label` (keyword, created before HNSW builds) |
 | Batch size | 64 points per upsert request |
