@@ -69,14 +69,15 @@ type Engine struct {
 	events   chan Event
 	runID    string
 
-	mu            sync.Mutex
-	cycle         int
-	sources       int
-	focus         string
-	report        strings.Builder
-	lastThink     strings.Builder
-	running       bool
-	prevNodeCount int
+	mu                  sync.Mutex
+	cycle               int
+	sources             int
+	focus               string
+	report              strings.Builder
+	lastThink           strings.Builder
+	running             bool
+	prevNodeCount       int
+	stoppedByStagnation bool
 }
 
 func NewEngine(cfg *config.Config) *Engine {
@@ -139,6 +140,14 @@ func NewEngine(cfg *config.Config) *Engine {
 
 func (e *Engine) Events() <-chan Event { return e.events }
 func (e *Engine) RunID() string        { return e.runID }
+
+// StoppedByStagnation reports whether the engine halted due to stagnation
+// (as opposed to hitting a max-cycles limit or an error).
+func (e *Engine) StoppedByStagnation() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.stoppedByStagnation
+}
 func (e *Engine) SaveGraph(path string) error {
 	return e.graph.SaveToFile(path)
 }
@@ -197,6 +206,9 @@ func (e *Engine) run() {
 		nodeAfter := e.graph.NodeCount()
 		newNodes := nodeAfter - nodeBefore
 		if !e.ctrl.RecordNovelty(newNodes, nodeAfter) {
+			e.mu.Lock()
+			e.stoppedByStagnation = true
+			e.mu.Unlock()
 			e.emit(Event{
 				Phase: PhaseStable,
 				Focus: fmt.Sprintf("Graph stagnated (%d consecutive low-novelty cycles)",
@@ -301,6 +313,97 @@ func (e *Engine) ingestPhase(topic string) []ingestion.SourceChunk {
 		mu.Unlock()
 		e.emit(Event{Phase: PhaseIngest,
 			OutputChunk: fmt.Sprintf("✓ Gutenberg: %d chunks from %d texts", len(sc), len(books))})
+	}()
+
+	// Semantic Scholar — academic papers with tl;dr summaries
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		papers, err := ingestion.SemanticScholarSearch(topic, 5)
+		if err != nil {
+			e.emit(Event{Phase: PhaseIngest, OutputChunk: fmt.Sprintf("Semantic Scholar: %v", err)})
+			return
+		}
+		var sc []ingestion.SourceChunk
+		for _, p := range papers {
+			for _, c := range ingestion.SemanticPaperToChunks(p) {
+				sc = append(sc, ingestion.SourceChunk{Text: c, Source: p.URL, Topic: topic})
+			}
+		}
+		mu.Lock()
+		allChunks = append(allChunks, sc...)
+		mu.Unlock()
+		e.emit(Event{Phase: PhaseIngest,
+			OutputChunk: fmt.Sprintf("✓ Semantic Scholar: %d chunks from %d papers", len(sc), len(papers))})
+	}()
+
+	// OpenAlex — broad scholarly index with concept tagging
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		works, err := ingestion.OpenAlexSearch(topic, 5)
+		if err != nil {
+			e.emit(Event{Phase: PhaseIngest, OutputChunk: fmt.Sprintf("OpenAlex: %v", err)})
+			return
+		}
+		var sc []ingestion.SourceChunk
+		for _, w := range works {
+			for _, c := range ingestion.OpenAlexWorkToChunks(w) {
+				sc = append(sc, ingestion.SourceChunk{Text: c, Source: w.URL, Topic: topic})
+			}
+		}
+		mu.Lock()
+		allChunks = append(allChunks, sc...)
+		mu.Unlock()
+		e.emit(Event{Phase: PhaseIngest,
+			OutputChunk: fmt.Sprintf("✓ OpenAlex: %d chunks from %d works", len(sc), len(works))})
+	}()
+
+	// CORE — full open-access papers (requires CORE_API_KEY)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		papers, err := ingestion.CoreSearch(topic, 5)
+		if err != nil {
+			e.emit(Event{Phase: PhaseIngest, OutputChunk: fmt.Sprintf("CORE: %v", err)})
+			return
+		}
+		if len(papers) == 0 {
+			return // key not configured — silent skip
+		}
+		var sc []ingestion.SourceChunk
+		for _, p := range papers {
+			for _, c := range ingestion.CorePaperToChunks(p) {
+				sc = append(sc, ingestion.SourceChunk{Text: c, Source: p.DownloadURL, Topic: topic})
+			}
+		}
+		mu.Lock()
+		allChunks = append(allChunks, sc...)
+		mu.Unlock()
+		e.emit(Event{Phase: PhaseIngest,
+			OutputChunk: fmt.Sprintf("✓ CORE: %d chunks from %d papers", len(sc), len(papers))})
+	}()
+
+	// PubMed — biomedical and neuroscience abstracts
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		abstracts, err := ingestion.PubMedSearch(topic, 5)
+		if err != nil {
+			e.emit(Event{Phase: PhaseIngest, OutputChunk: fmt.Sprintf("PubMed: %v", err)})
+			return
+		}
+		var sc []ingestion.SourceChunk
+		for _, a := range abstracts {
+			for _, c := range ingestion.PubMedToChunks(a) {
+				sc = append(sc, ingestion.SourceChunk{Text: c, Source: a.URL, Topic: topic})
+			}
+		}
+		mu.Lock()
+		allChunks = append(allChunks, sc...)
+		mu.Unlock()
+		e.emit(Event{Phase: PhaseIngest,
+			OutputChunk: fmt.Sprintf("✓ PubMed: %d chunks from %d abstracts", len(sc), len(abstracts))})
 	}()
 
 	wg.Wait()

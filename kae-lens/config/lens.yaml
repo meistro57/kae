@@ -6,20 +6,20 @@ qdrant:
   findings_collection: "kae_lens_findings"
 
 watcher:
-  poll_interval_seconds: 30
+  poll_interval_seconds: 60   # was 30 — gives synthesizer breathing room before next wave
   batch_size: 10
-  max_concurrent_batches: 2
+  max_concurrent_batches: 3   # was 2 — one extra slot reduces skipped polls
 
 density:
   thresholds:
     very_sparse_width: 50
-    sparse_width: 35
+    sparse_width: 40            # was 35 — wider net for sparse arXiv points
     medium_width: 20
     dense_width: 12
     very_dense_width: 6
   score_thresholds:
     sparse: 0.60
-    dense: 0.80
+    dense: 0.70                 # was 0.80 — 0.80 was discarding valid philosophy findings
   density_buckets:
     very_sparse_max: 0
     sparse_max: 10
@@ -31,8 +31,9 @@ llm:
   fast_model: "google/gemini-2.5-flash"
   openrouter_base_url: "https://openrouter.ai/api/v1"
   openrouter_api_key: ""
-  min_confidence: 0.65
+  min_confidence: 0.60          # was 0.65 — recover borderline findings that were being dropped
   fast_batch_threshold: 5
+  llm_timeout_seconds: 120      # per-call cap — stops a hung DeepSeek from canceling the whole batch
 
 embedding:
   model: "text-embedding-3-small"

@@ -185,7 +185,7 @@ func (m Model) View() string {
 	}
 
 	// Help bar
-	help := styleMuted.Render("  ↑↓ navigate  enter toggle trace  q quit")
+	help := styleMuted.Render("  ↑↓ navigate  enter toggle trace+correction  q quit")
 
 	return m.renderTitleBar() + "\n" + top + bottom + "\n" + help
 }
@@ -307,10 +307,14 @@ func (m Model) renderTracePanel(width int) string {
 		trace = styleMuted.Render("(no reasoning trace available)")
 	}
 
-	// Word-wrap trace to panel width
-	wrapped := wordWrap(trace, width-6)
+	content := title + "\n\n" + wordWrap(trace, width-6)
 
-	content := title + "\n\n" + wrapped
+	// Show data-grounded correction for anomaly/contradiction findings
+	if f.Correction != "" {
+		corrLabel := styleHeader.Render("DATA CORRECTION")
+		content += "\n\n" + corrLabel + "\n\n" + wordWrap(f.Correction, width-6)
+	}
+
 	return stylePanel.Width(width).Render(content)
 }
 

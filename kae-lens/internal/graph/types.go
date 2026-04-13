@@ -31,6 +31,7 @@ type FindingEvent struct {
 	Domains        []string  `json:"domains"`
 	Summary        string    `json:"summary"`
 	ReasoningTrace string    `json:"reasoning_trace"`
+	Correction     string    `json:"correction,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	BatchID        string    `json:"batch_id"`
 }

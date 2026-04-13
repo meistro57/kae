@@ -109,6 +109,10 @@ QDRANT_URL=http://localhost:6333
 EMBEDDINGS_URL=https://api.openai.com
 EMBEDDINGS_KEY=your_openai_key_here
 EMBEDDINGS_MODEL=text-embedding-3-small
+
+# Optional — CORE open-access full-text papers (core.ac.uk/services/api)
+# Without this key CORE is silently skipped; all other sources still run
+CORE_API_KEY=your_core_key_here
 ```
 
 ---
@@ -133,6 +137,11 @@ go run . --ensemble --models "anthropic:claude-opus-4-6,openai:gpt-4o,gemini:gem
 
 # Auto-stop when the graph stagnates (no new nodes for N cycles)
 go run . --novelty-threshold 0.05 --stagnation-window 5
+
+# Auto-restart on stagnation — saves report then starts a fresh run automatically
+go run . --auto-restart
+go run . --auto-restart --seed "consciousness"   # keep the same seed each restart
+go run . --auto-restart --headless               # headless + auto-restart (good for overnight runs)
 
 # Auto-branch on high model controversy
 go run . --ensemble --models "..." --branch-threshold 0.7 --max-branches 4
@@ -205,7 +214,7 @@ go build -o kae .
 
 ## KAE Lens
 
-KAE Lens is an autonomous post-processing layer that fires when KAE deposits new knowledge into Qdrant. It reasons over the full topology of the ingested graph and surfaces connections, contradictions, clusters, and anomalies that KAE never explicitly made.
+KAE Lens is an autonomous post-processing layer that fires when KAE deposits new knowledge into Qdrant. It reasons over the full topology of the ingested graph and surfaces connections, contradictions, clusters, and anomalies that KAE never explicitly made. For anomalies and contradictions, it runs a second focused LLM pass to produce a **data-grounded correction** from the actual source evidence.
 
 ```bash
 cd kae-lens
@@ -224,12 +233,14 @@ make run-lens
 
 ### Finding Types
 
-| Type | Meaning |
-|---|---|
-| `connection` | Unexpected cross-domain semantic link |
-| `contradiction` | Conflicting claims between knowledge nodes |
-| `cluster` | Emergent concept group KAE never tagged |
-| `anomaly` | Outlier breaking mainstream consensus |
+| Type | Correction pass | Meaning |
+|---|---|---|
+| `connection` | — | Unexpected cross-domain semantic link |
+| `contradiction` | yes | Conflicting claims between knowledge nodes |
+| `cluster` | — | Emergent concept group KAE never tagged |
+| `anomaly` | yes | Outlier breaking mainstream consensus |
+
+When a correction is produced it is stored on the finding and shown in the TUI trace panel (`enter` to expand).
 
 ### Adaptive Density
 
@@ -238,10 +249,10 @@ Lens adjusts its search width to local vector density so sparse regions get wide
 | Density | Nearby Points | Width | Threshold |
 |---|---|---|---|
 | very_sparse | 0 | 50 | 0.60 |
-| sparse | 1–10 | 35 | 0.60 |
-| medium | 11–50 | 20 | 0.70 |
-| dense | 51–200 | 12 | 0.80 |
-| very_dense | 200+ | 6 | 0.80 |
+| sparse | 1–10 | 40 | 0.60 |
+| medium | 11–50 | 20 | 0.65 |
+| dense | 51–200 | 12 | 0.70 |
+| very_dense | 200+ | 6 | 0.70 |
 
 Lens findings are themselves embedded and stored in `kae_lens_findings` — a future pass can run Lens against its own findings, building third-order knowledge structures.
 
@@ -358,7 +369,8 @@ kae/
 
 ```
 Phase 0  SEED           Agent chooses its own entry concept (or uses --seed)
-Phase 1  INGEST         Pulls sources on current topic (Wikipedia, arxiv, Gutenberg)
+Phase 1  INGEST         Pulls sources on current topic (Wikipedia, arXiv, Gutenberg,
+                        Semantic Scholar, OpenAlex, CORE*, PubMed)  *requires CORE_API_KEY
 Phase 2  EMBED          Embeds chunks and stores them in Qdrant
 Phase 3  SEARCH         Retrieves semantically similar passages from vector memory
 Phase 4  THINK          Single model reasons visibly — you watch it think
@@ -372,7 +384,7 @@ Phase 8  REPORT         Updates the live markdown + HTML report
 ```
 
 Runs until:
-- Graph novelty drops below `--novelty-threshold` for `--stagnation-window` cycles
+- Graph novelty drops below `--novelty-threshold` for `--stagnation-window` cycles → saves report and stops (or restarts if `--auto-restart` is set)
 - `--cycles` limit reached
 - You hit `q` or `ctrl+c` (graceful save)
 
@@ -408,6 +420,24 @@ In **ensemble mode** (`--ensemble`), the brain role is replaced by N providers r
 
 KAE uses Qdrant as optional persistent vector memory. When running, every concept node is embedded and stored — future cycles retrieve semantically similar nodes from previous sessions to ground the reasoning.
 
+## Ingestion Sources
+
+| Source | Key required | Strength |
+|---|---|---|
+| Wikipedia | none | Broad concept grounding |
+| arXiv | none | Cutting-edge preprints (physics, AI, math) |
+| Project Gutenberg | none | Ancient philosophy and primary texts |
+| Semantic Scholar | none | Academic index with one-sentence tl;dr summaries |
+| OpenAlex | none | Massive open index — tags works with broad scientific concepts |
+| CORE | `CORE_API_KEY` | World's largest open-access aggregator — full abstract density |
+| PubMed | none | Biomedical and neuroscience abstracts |
+
+All sources run in parallel each cycle. CORE is silently skipped if the key is absent.
+
+---
+
+## Vector Memory (Qdrant)
+
 | Setting | Detail |
 |---------|--------|
 | Version | `qdrant/qdrant:v1.17.1` (pinned) |
@@ -442,13 +472,17 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 - [x] **Multi-provider support** — Anthropic, OpenAI, Gemini, Ollama, OpenRouter via unified `provider:model` syntax
 - [x] **Multi-model ensemble reasoning** — parallel fan-out, controversy scoring, dissenter detection
 - [x] **Novelty decay detection** — auto-stop when graph stagnates; configurable threshold + window
+- [x] **Auto-restart** (`--auto-restart`) — saves report and starts a fresh run on stagnation
 - [x] **Auto-branching** — high ensemble controversy triggers focus branch
 - [x] **Anomaly clustering** — cosine-similarity grouping of anomaly nodes across runs
 - [x] **Cross-run meta-analysis** (`--analyze`) — finds "convergent heresies" (anomalies that appear independently across multiple runs)
 - [x] **Headless mode** (`--headless`) — run without TUI for scripting and MCP integration
+- [x] **Expanded ingestion** — Semantic Scholar, OpenAlex, CORE, PubMed alongside Wikipedia, arXiv, Gutenberg
 - [x] **KAE Analyzer** — standalone CLI for post-run inspection (runs, anomalies, convergence, search, export)
 - [x] **KAE MCP Server** — exposes KAE + Qdrant to any MCP-compatible AI assistant
 - [x] **KAE Lens** — autonomous post-processing layer; adaptive density reasoning; TUI + web dashboard
+- [x] **Lens anomaly correction** — data-grounded second LLM pass resolves anomaly/contradiction findings against source evidence
+- [x] **Lens performance tuning** — per-call LLM timeout, relaxed density thresholds, paced batch polling
 
 ### Tier 2+ — Coming Next
 - [ ] Persistent meta-graph across runs

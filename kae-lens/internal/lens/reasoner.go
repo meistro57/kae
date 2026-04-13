@@ -117,7 +117,9 @@ func (r *Reasoner) processPoint(ctx context.Context, batchID string, anchor *anc
 		return nil, nil
 	}
 
-	// 3. Call synthesizer
+	// 3. Call synthesizer — also build neighbor summaries for correction pass
+	neighborSummaries := toNeighborSummaries(filtered)
+
 	findings, err := r.synthesizer.Synthesize(ctx, batchID, anchor, filtered, profile)
 	if err != nil {
 		return nil, fmt.Errorf("synthesis: %w", err)
@@ -125,6 +127,13 @@ func (r *Reasoner) processPoint(ctx context.Context, batchID string, anchor *anc
 
 	if len(findings) == 0 {
 		return nil, nil
+	}
+
+	// 3b. For anomaly and contradiction findings, request a data-grounded correction.
+	for _, f := range findings {
+		if f.Type == "anomaly" || f.Type == "contradiction" {
+			f.Correction = r.synthesizer.Correct(ctx, f, anchor, neighborSummaries)
+		}
 	}
 
 	// 4. Write findings to kae_lens_findings
@@ -142,6 +151,7 @@ func (r *Reasoner) processPoint(ctx context.Context, batchID string, anchor *anc
 			Domains:        f.Domains,
 			Summary:        f.Summary,
 			ReasoningTrace: f.ReasoningTrace,
+			Correction:     f.Correction,
 			CreatedAt:      time.Unix(f.CreatedAt, 0),
 			BatchID:        f.BatchID,
 		})
@@ -234,4 +244,25 @@ func (r *Reasoner) emit(event any) {
 	default:
 		// Non-blocking: if channel is full, drop rather than stall the agent
 	}
+}
+
+// toNeighborSummaries converts scored Qdrant points to the neighborSummary type
+// used by the synthesizer's correction prompt.
+func toNeighborSummaries(points []*qdrant.ScoredPoint) []neighborSummary {
+	summaries := make([]neighborSummary, 0, len(points))
+	for _, p := range points {
+		payload := qdrantclient.PayloadToMap(p.Payload)
+		content := stringFromMap(payload, "content", "text")
+		if len(content) > 400 {
+			content = content[:400] + "..."
+		}
+		summaries = append(summaries, neighborSummary{
+			ID:      p.Id.GetUuid(),
+			Score:   p.Score,
+			Title:   stringFromMap(payload, "title", "source"),
+			Domain:  stringFromMap(payload, "domain", "topic"),
+			Content: content,
+		})
+	}
+	return summaries
 }

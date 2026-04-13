@@ -19,10 +19,13 @@ type LensFinding struct {
 	Domains        []string    `json:"domains"`
 	Summary        string      `json:"summary"`
 	ReasoningTrace string      `json:"reasoning_trace"`
-	EmbeddingText  string      `json:"embedding_text"`
-	CreatedAt      int64       `json:"created_at"`
-	Reviewed       bool        `json:"reviewed"`
-	BatchID        string      `json:"batch_id"`
+	// Correction is a data-grounded resolution produced for anomaly and
+	// contradiction findings. Empty for connection and cluster types.
+	Correction    string `json:"correction,omitempty"`
+	EmbeddingText string `json:"embedding_text"`
+	CreatedAt     int64  `json:"created_at"`
+	Reviewed      bool   `json:"reviewed"`
+	BatchID       string `json:"batch_id"`
 }
 
 // LensFindingsCollectionName is the Qdrant collection name for Lens synthesis findings.

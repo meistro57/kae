@@ -41,6 +41,8 @@ func main() {
 		"Log debug output to debug.log")
 	headless := flag.Bool("headless", false,
 		"Run without TUI (for scripts/MCP servers)")
+	autoRestart := flag.Bool("auto-restart", false,
+		"Save report and restart automatically when the graph stagnates")
 
 	// ── Ensemble flags (Tier 1.1) ──────────────────────────────────────────────
 	ensembleMode := flag.Bool("ensemble", false,
@@ -122,29 +124,41 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── Normal archaeology run ─────────────────────────────────────────────────
-	eng := agent.NewEngine(cfg)
-
-	if *headless {
-		// Headless mode: run engine without TUI
-		runHeadless(eng, cfg)
-	} else {
-		// Interactive TUI mode
-		app := ui.NewApp(eng)
-
-		p := tea.NewProgram(app,
-			tea.WithAltScreen(),
-			tea.WithMouseCellMotion(),
-		)
-
-		if _, err := p.Run(); err != nil {
-			fmt.Fprintln(os.Stderr, "UI error:", err)
-			os.Exit(1)
+	// ── Normal archaeology run (with optional auto-restart on stagnation) ─────
+	runNum := 0
+	for {
+		runNum++
+		if runNum > 1 {
+			fmt.Fprintf(os.Stderr, "\n─── Auto-restart #%d ───\n\n", runNum)
 		}
-	}
 
-	saveReport(eng)
-	saveGraph(eng, cfg.SaveGraphPath)
+		eng := agent.NewEngine(cfg)
+
+		if *headless {
+			runHeadless(eng, cfg)
+		} else {
+			app := ui.NewApp(eng)
+
+			p := tea.NewProgram(app,
+				tea.WithAltScreen(),
+				tea.WithMouseCellMotion(),
+			)
+
+			if _, err := p.Run(); err != nil {
+				fmt.Fprintln(os.Stderr, "UI error:", err)
+				os.Exit(1)
+			}
+		}
+
+		saveReport(eng)
+		saveGraph(eng, cfg.SaveGraphPath)
+
+		if *autoRestart && eng.StoppedByStagnation() {
+			fmt.Fprintln(os.Stderr, "Stagnation detected — restarting fresh run...")
+			continue
+		}
+		break
+	}
 }
 
 // runMetaAnalysis performs cross-run anomaly clustering and prints a report.

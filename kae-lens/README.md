@@ -69,32 +69,44 @@ make run-kae
 ### The Agent Loop
 
 ```
-Watcher polls kae_chunks (every 30s)
+Watcher polls kae_chunks (every 60s)
   └── finds points where lens_processed is absent or false
   └── marks them processed optimistically (before reasoning starts)
-  └── dispatches batch to Reasoner
+  └── dispatches batch to Reasoner (max 3 concurrent batches)
 
 Reasoner (per point in batch)
   └── DensityCalculator: probe local vector density
        └── very_sparse → width=50, threshold=0.60
-       └── sparse      → width=35, threshold=0.60
-       └── medium      → width=20, threshold=0.70
-       └── dense       → width=12, threshold=0.80
-       └── very_dense  → width=6,  threshold=0.80
+       └── sparse      → width=40, threshold=0.60
+       └── medium      → width=20, threshold=0.65
+       └── dense       → width=12, threshold=0.70
+       └── very_dense  → width=6,  threshold=0.70
   └── QueryNeighbors: adaptive Qdrant similarity search
-  └── Synthesizer: build prompt → call LLM → parse findings JSON
+  └── Synthesizer: build prompt → call LLM (120s timeout) → parse findings JSON
+  └── Corrector: for anomaly/contradiction findings, second LLM pass produces
+       a data-grounded correction from the source evidence
   └── Writer: embed findings → upsert to kae_lens_findings
   └── Emit events → TUI channel + SSE broker
 ```
 
 ### Finding Types
 
-| Type | Meaning |
-|---|---|
-| `connection` | Unexpected cross-domain semantic link |
-| `contradiction` | Conflicting claims between knowledge nodes |
-| `cluster` | Emergent concept group KAE never tagged |
-| `anomaly` | Outlier breaking mainstream consensus |
+| Type | Meaning | Correction pass |
+|---|---|---|
+| `connection` | Unexpected cross-domain semantic link | — |
+| `contradiction` | Conflicting claims between knowledge nodes | yes |
+| `cluster` | Emergent concept group KAE never tagged | — |
+| `anomaly` | Outlier breaking mainstream consensus | yes |
+
+### Anomaly & Contradiction Correction
+
+For `anomaly` and `contradiction` findings, Lens runs a focused second LLM pass using the same anchor and neighbor content already retrieved. The corrector is instructed to:
+
+1. State what the source evidence actually supports
+2. Identify where the anomaly/contradiction diverges from that evidence
+3. Propose what the corrected understanding should be, citing source point IDs inline
+
+The correction is stored in the `correction` field on the finding (Qdrant payload + event) and shown in the TUI trace panel when you expand a finding with `enter`.
 
 ### Adaptive Density
 
@@ -103,10 +115,10 @@ The search width and score threshold adapt to local point density:
 | Density | Nearby Points | Width | Threshold |
 |---|---|---|---|
 | very_sparse | 0 | 50 | 0.60 |
-| sparse | 1–10 | 35 | 0.60 |
-| medium | 11–50 | 20 | 0.70 |
-| dense | 51–200 | 12 | 0.80 |
-| very_dense | 200+ | 6 | 0.80 |
+| sparse | 1–10 | 40 | 0.60 |
+| medium | 11–50 | 20 | 0.65 |
+| dense | 51–200 | 12 | 0.70 |
+| very_dense | 200+ | 6 | 0.70 |
 
 ---
 
@@ -155,12 +167,13 @@ kae-lens/
 **`kae_lens_findings`** — written by Lens
 ```json
 {
-  "type": "connection",
-  "confidence": 0.87,
+  "type": "anomaly",
+  "confidence": 0.82,
   "source_point_ids": ["270359567535248", "271459079163459"],
   "domains": ["physics", "philosophy"],
-  "summary": "Quantum entanglement and the Vedic Akasha field share...",
-  "reasoning_trace": "Step 1: anchor is quantum entanglement...",
+  "summary": "Mainstream physics literature systematically avoids...",
+  "reasoning_trace": "Step 1: anchor is observer effect...",
+  "correction": "Source [270359567535248] directly contradicts the consensus position by...",
   "batch_id": "20260412-185800.500",
   "created_at": 1712345900
 }
@@ -182,11 +195,14 @@ See `config/lens.yaml` — all fields documented inline. Key settings:
 |---|---|---|
 | `qdrant.knowledge_collection` | `kae_chunks` | Collection Lens reads from |
 | `qdrant.findings_collection` | `kae_lens_findings` | Collection Lens writes to |
-| `watcher.poll_interval_seconds` | 30 | How often to check for new points |
+| `watcher.poll_interval_seconds` | 60 | How often to check for new points |
 | `watcher.batch_size` | 10 | Points per reasoning batch |
-| `llm.reasoning_model` | `deepseek/deepseek-r1` | Model for deep reasoning |
-| `llm.fast_model` | `google/gemini-2.5-flash` | Model for lighter batches |
-| `llm.min_confidence` | 0.65 | Minimum finding confidence threshold |
+| `watcher.max_concurrent_batches` | 3 | Max batches processing simultaneously |
+| `llm.reasoning_model` | `deepseek/deepseek-r1` | Model for deep reasoning passes |
+| `llm.fast_model` | `google/gemini-2.5-flash` | Model for lighter batches and corrections |
+| `llm.min_confidence` | 0.60 | Minimum finding confidence threshold |
+| `llm.llm_timeout_seconds` | 120 | Per-call LLM timeout — prevents a hung call from canceling the batch |
+| `density.score_thresholds.dense` | 0.70 | Similarity floor for dense regions |
 | `web.port` | 8080 | Web dashboard port |
 
 ---

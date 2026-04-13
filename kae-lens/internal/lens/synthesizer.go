@@ -84,15 +84,24 @@ func (s *Synthesizer) Synthesize(
 	log.Printf("[synthesizer] calling LLM for %q | neighbors=%d | model=reasoning=%v",
 		anchor.title, len(neighborSummaries), useReasoningModel)
 
+	// Apply per-call timeout so a hung DeepSeek-R1 response doesn't cancel
+	// the whole batch context — each point gets its own deadline.
+	timeout := time.Duration(s.cfg.LLM.LLMTimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 120 * time.Second // safe default if not configured
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	var (
 		resp *llm.ChatResponse
 		err  error
 	)
 
 	if useReasoningModel {
-		resp, err = s.llm.Reason(ctx, systemPrompt, userPrompt)
+		resp, err = s.llm.Reason(callCtx, systemPrompt, userPrompt)
 	} else {
-		resp, err = s.llm.FastChat(ctx, systemPrompt, userPrompt)
+		resp, err = s.llm.FastChat(callCtx, systemPrompt, userPrompt)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("LLM call: %w", err)
@@ -208,6 +217,92 @@ func (s *Synthesizer) buildUserPrompt(anchor *anchorPoint, neighbors []neighborS
 	sb.WriteString("Analyze the anchor point in relation to its neighbors.\n")
 	sb.WriteString("Identify connections, contradictions, clusters, or anomalies.\n")
 	sb.WriteString("Return ONLY a JSON array of findings. Empty array [] if nothing significant.\n")
+
+	return sb.String()
+}
+
+// Correct runs a focused second-pass LLM call for an anomaly or contradiction
+// finding, producing a data-grounded correction using the anchor and neighbor
+// content that were already in scope when the finding was made.
+// Returns an empty string (non-fatal) if the call fails.
+func (s *Synthesizer) Correct(
+	ctx context.Context,
+	finding *collections.LensFinding,
+	anchor *anchorPoint,
+	neighbors []neighborSummary,
+) string {
+	system := `You are a data correction agent working inside KAE Lens.
+
+An anomaly or contradiction has been flagged in a knowledge graph. Your job is to
+use the raw source evidence — and only that evidence — to produce a precise,
+data-grounded correction or resolution.
+
+Rules:
+- Do not speculate beyond what the source data contains.
+- Cite specific source point IDs where they support your correction.
+- Write 2-4 sentences in plain English.
+- Output only the correction text. No JSON, no preamble, no bullet points.`
+
+	user := s.buildCorrectionPrompt(finding, anchor, neighbors)
+
+	log.Printf("[synthesizer] requesting correction for %q (%s)", anchor.title, finding.Type)
+
+	timeout := time.Duration(s.cfg.LLM.LLMTimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	resp, err := s.llm.FastChat(callCtx, system, user)
+	if err != nil {
+		log.Printf("[synthesizer] correction LLM error for %q: %v", anchor.title, err)
+		return ""
+	}
+
+	correction := strings.TrimSpace(resp.Content)
+	log.Printf("[synthesizer] correction produced for %q (%d chars)", anchor.title, len(correction))
+	return correction
+}
+
+// buildCorrectionPrompt constructs the prompt for the correction pass.
+func (s *Synthesizer) buildCorrectionPrompt(
+	finding *collections.LensFinding,
+	anchor *anchorPoint,
+	neighbors []neighborSummary,
+) string {
+	var sb strings.Builder
+
+	sb.WriteString("## FINDING\n")
+	sb.WriteString(fmt.Sprintf("Type: %s\n", finding.Type))
+	sb.WriteString(fmt.Sprintf("Summary: %s\n", finding.Summary))
+	if finding.ReasoningTrace != "" {
+		sb.WriteString(fmt.Sprintf("Reasoning: %s\n", finding.ReasoningTrace))
+	}
+
+	sb.WriteString("\n## SOURCE DATA\n")
+	sb.WriteString(fmt.Sprintf("\nAnchor [%s] %s — %s\n", anchor.id, anchor.title, anchor.domain))
+	content := anchor.content
+	if len(content) > 500 {
+		content = content[:500] + "..."
+	}
+	if content != "" {
+		sb.WriteString(fmt.Sprintf("%s\n", content))
+	}
+
+	for _, n := range neighbors {
+		sb.WriteString(fmt.Sprintf("\nNeighbor [%s] %s — %s\n", n.ID, n.Title, n.Domain))
+		if n.Content != "" {
+			sb.WriteString(fmt.Sprintf("%s\n", n.Content))
+		}
+	}
+
+	sb.WriteString("\n## TASK\n")
+	sb.WriteString("Based solely on the source data above, write a correction that:\n")
+	sb.WriteString("1. States what the evidence actually supports\n")
+	sb.WriteString("2. Identifies where the anomaly or contradiction diverges from that evidence\n")
+	sb.WriteString("3. Proposes what the corrected understanding should be\n")
+	sb.WriteString("\nCite source point IDs inline (e.g. [abc-123]). 2-4 sentences only.\n")
 
 	return sb.String()
 }

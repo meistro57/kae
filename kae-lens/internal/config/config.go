@@ -66,6 +66,7 @@ type LLMConfig struct {
 	OpenRouterAPIKey   string  `yaml:"openrouter_api_key"`
 	MinConfidence      float64 `yaml:"min_confidence"`
 	FastBatchThreshold int     `yaml:"fast_batch_threshold"`
+	LLMTimeoutSeconds  int     `yaml:"llm_timeout_seconds"`
 }
 
 type EmbeddingConfig struct {

@@ -73,6 +73,7 @@ func (w *Writer) Write(ctx context.Context, findings []*collections.LensFinding)
 				"confidence":      qdrant.NewValueDouble(f.Confidence),
 				"summary":         qdrant.NewValueString(f.Summary),
 				"reasoning_trace": qdrant.NewValueString(f.ReasoningTrace),
+				"correction":      qdrant.NewValueString(f.Correction),
 				"embedding_text":  qdrant.NewValueString(f.EmbeddingText),
 				"batch_id":        qdrant.NewValueString(f.BatchID),
 				"created_at":      qdrant.NewValueInt(f.CreatedAt),
