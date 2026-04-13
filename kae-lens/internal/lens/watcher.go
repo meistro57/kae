@@ -39,8 +39,15 @@ func (w *Watcher) Run(ctx context.Context) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	// Stats ticker - emit stats every 5 seconds
+	statsTicker := time.NewTicker(5 * time.Second)
+	defer statsTicker.Stop()
+
 	log.Printf("[watcher] started — polling every %s, batch size %d",
 		interval, w.cfg.Watcher.BatchSize)
+
+	// Emit initial stats
+	w.emitStats(ctx)
 
 	// Run once immediately on start
 	w.poll(ctx)
@@ -52,6 +59,8 @@ func (w *Watcher) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			w.poll(ctx)
+		case <-statsTicker.C:
+			w.emitStats(ctx)
 		}
 	}
 }
@@ -137,6 +146,32 @@ func (w *Watcher) emit(event any) {
 	default:
 		log.Println("[watcher] event channel full, dropping event")
 	}
+}
+
+// emitStats queries Qdrant for current collection stats and emits a StatsEvent.
+func (w *Watcher) emitStats(ctx context.Context) {
+	// Get knowledge collection stats
+	knowledgeInfo, err := w.qc.GetCollectionInfo(ctx, w.cfg.Qdrant.KnowledgeCollection)
+	if err != nil {
+		log.Printf("[watcher] failed to get knowledge collection stats: %v", err)
+		return
+	}
+
+	// Get findings collection stats
+	findingsInfo, err := w.qc.GetCollectionInfo(ctx, w.cfg.Qdrant.FindingsCollection)
+	if err != nil {
+		log.Printf("[watcher] failed to get findings collection stats: %v", err)
+		return
+	}
+
+	stats := graph.StatsEvent{
+		TotalKnowledgePoints: int64(knowledgeInfo.GetPointsCount()),
+		TotalFindings:        int64(findingsInfo.GetPointsCount()),
+		// ProcessedInSession and FindingsInSession are tracked by the TUI itself
+		// We just send the totals here
+	}
+
+	w.emit(stats)
 }
 
 // newBatchID generates a short timestamp-based batch identifier.

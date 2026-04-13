@@ -19,6 +19,9 @@ type msgBatchStart struct{ event graph.BatchStartEvent }
 // msgBatchDone is a Bubbletea message for a batch completing.
 type msgBatchDone struct{ event graph.BatchDoneEvent }
 
+// msgStats is a Bubbletea message for stats updates.
+type msgStats struct{ event graph.StatsEvent }
+
 // msgTick is the periodic refresh tick.
 type msgTick struct{}
 
@@ -72,6 +75,13 @@ func (m *Model) SendBatchStart(e graph.BatchStartEvent) {
 func (m *Model) SendBatchDone(e graph.BatchDoneEvent) {
 	if m.program != nil {
 		m.program.Send(msgBatchDone{event: e})
+	}
+}
+
+// SendStats pushes a stats update event.
+func (m *Model) SendStats(e graph.StatsEvent) {
+	if m.program != nil {
+		m.program.Send(msgStats{event: e})
 	}
 }
 
@@ -141,6 +151,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stats.ActiveBatch = false
 		m.stats.BatchProgress = ""
 
+	case msgStats:
+		// Update global stats from Qdrant
+		m.stats.TotalKnowledgePoints = msg.event.TotalKnowledgePoints
+		m.stats.TotalFindings = msg.event.TotalFindings
+
 	case msgTick:
 		return m, tickCmd()
 	}
@@ -155,7 +170,7 @@ func (m Model) View() string {
 	}
 
 	// Split layout: left stats panel + right feed panel
-	leftWidth := 28
+	leftWidth := 35
 	rightWidth := m.width - leftWidth - 4 // 4 for borders/padding
 
 	left := m.renderStatsPanel(leftWidth)
@@ -216,10 +231,10 @@ func (m Model) renderStatsPanel(width int) string {
 		"",
 		styleHeader.Render("BY TYPE"),
 		"",
-		row(styleBadgeConnection.Render("🔗"), fmt.Sprintf("%d", s.FindingsByType.Connections)),
-		row(styleBadgeContradiction.Render("⚡"), fmt.Sprintf("%d", s.FindingsByType.Contradictions)),
-		row(styleBadgeCluster.Render("🌀"), fmt.Sprintf("%d", s.FindingsByType.Clusters)),
-		row(styleBadgeAnomaly.Render("🔴"), fmt.Sprintf("%d", s.FindingsByType.Anomalies)),
+		row("🔗 Connections", fmt.Sprintf("%d", s.FindingsByType.Connections)),
+		row("⚡ Contradictions", fmt.Sprintf("%d", s.FindingsByType.Contradictions)),
+		row("🌀 Clusters", fmt.Sprintf("%d", s.FindingsByType.Clusters)),
+		row("🔴 Anomalies", fmt.Sprintf("%d", s.FindingsByType.Anomalies)),
 	}
 
 	content := strings.Join(lines, "\n")

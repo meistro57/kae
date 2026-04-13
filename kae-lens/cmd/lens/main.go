@@ -28,6 +28,18 @@ func main() {
 	noTUI      := flag.Bool("no-tui", false, "disable TUI, log to stdout only")
 	flag.Parse()
 
+	// ── Logging setup ──
+	// If TUI is enabled, redirect logs to file so they don't interfere with display
+	if !*noTUI {
+		logFile, err := os.OpenFile("lens.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			log.Fatalf("[lens] failed to open log file: %v", err)
+		}
+		defer logFile.Close()
+		log.SetOutput(logFile)
+		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	}
+
 	// ── Config ──
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -135,6 +147,8 @@ func main() {
 					tuiModel.SendBatchStart(e)
 				case graph.BatchDoneEvent:
 					tuiModel.SendBatchDone(e)
+				case graph.StatsEvent:
+					tuiModel.SendStats(e)
 				}
 			}
 		}

@@ -1,8 +1,8 @@
-.PHONY: all build lens kae run-lens run-kae deps tidy clean fmt vet
+.PHONY: all build lens kae run-lens run-kae deps tidy clean fmt vet test healthcheck component-test
 
 # ── Config ──
-BINARY_KAE  = ./bin/kae
-BINARY_LENS = ./bin/lens
+BINARY_KAE  = ../kae
+BINARY_LENS = ./lens
 CONFIG_LENS = config/lens.yaml
 CONFIG_KAE  = config/kae.yaml
 
@@ -13,13 +13,11 @@ build: kae lens
 
 kae:
 	@echo "→ building KAE..."
-	@mkdir -p bin
-	go build -o $(BINARY_KAE) ./cmd/kae
+	@cd .. && go build -o kae .
 
 lens:
 	@echo "→ building KAE Lens..."
-	@mkdir -p bin
-	go build -o $(BINARY_LENS) ./cmd/lens
+	go build -o lens ./cmd/lens
 
 # ── Run ──
 run-lens:
@@ -63,23 +61,40 @@ fmt:
 vet:
 	go vet ./...
 
+test:
+	@echo "→ running tests..."
+	go test ./internal/lens/... -v
+
+healthcheck:
+	@echo "→ running health check..."
+	@chmod +x healthcheck.sh
+	./healthcheck.sh
+
+component-test:
+	@echo "→ running component integration test..."
+	@cd test && go run integration.go
+
 clean:
-	rm -rf bin/
+	rm -f lens
+	@cd .. && rm -f kae
 
 # ── Help ──
 help:
 	@echo ""
 	@echo "KAE + KAE Lens — Make targets"
 	@echo "──────────────────────────────"
-	@echo "  make build         Build both binaries to ./bin/"
-	@echo "  make run-lens      Run KAE Lens (TUI + web dashboard)"
+	@echo "  make build           Build both binaries to ./bin/"
+	@echo "  make test            Run unit tests"
+	@echo "  make healthcheck     Run full system health check"
+	@echo "  make component-test  Run component integration test"
+	@echo "  make run-lens        Run KAE Lens (TUI + web dashboard)"
 	@echo "  make run-lens-notui  Run Lens without TUI (plain logs)"
-	@echo "  make run-kae       Run KAE ingestion engine"
-	@echo "  make qdrant-up     Start Qdrant in Docker"
-	@echo "  make qdrant-down   Stop Qdrant Docker container"
-	@echo "  make deps          Download Go dependencies"
-	@echo "  make tidy          Run go mod tidy"
-	@echo "  make fmt           Run go fmt"
-	@echo "  make vet           Run go vet"
-	@echo "  make clean         Remove built binaries"
+	@echo "  make run-kae         Run KAE ingestion engine"
+	@echo "  make qdrant-up       Start Qdrant in Docker"
+	@echo "  make qdrant-down     Stop Qdrant Docker container"
+	@echo "  make deps            Download Go dependencies"
+	@echo "  make tidy            Run go mod tidy"
+	@echo "  make fmt             Run go fmt"
+	@echo "  make vet             Run go vet"
+	@echo "  make clean           Remove built binaries"
 	@echo ""

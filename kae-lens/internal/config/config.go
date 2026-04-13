@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -101,6 +102,14 @@ func Load(path string) (*LensConfig, error) {
 
 	// Environment variable overrides for secrets.
 	// LENS_* variants take priority; fall back to the shared KAE env vars.
+	if v := os.Getenv("LENS_QDRANT_HOST"); v != "" {
+		cfg.Qdrant.Host = v
+	}
+	if v := os.Getenv("LENS_QDRANT_PORT"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil {
+			cfg.Qdrant.Port = p
+		}
+	}
 	if v := os.Getenv("LENS_QDRANT_API_KEY"); v != "" {
 		cfg.Qdrant.APIKey = v
 	}

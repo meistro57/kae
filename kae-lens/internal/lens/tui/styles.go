@@ -89,7 +89,7 @@ var (
 var (
 	styleStatLabel = lipgloss.NewStyle().
 			Foreground(colorMuted).
-			Width(18)
+			Width(20)
 
 	styleStatValue = lipgloss.NewStyle().
 			Foreground(colorPrimary).
