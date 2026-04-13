@@ -506,6 +506,183 @@ func toolStartRun(seed string, cycles int, model string) (string, error) {
 	return fmt.Sprintf("## KAE Run Output (summary)\n\nSeed: `%s` | Cycles: %d\n\n```\n%s\n```", seed, cycles, summary), nil
 }
 
+func toolMetaAttractors(minRuns int) (string, error) {
+	body := map[string]any{
+		"limit":        500,
+		"with_payload": true,
+		"with_vector":  false,
+		"filter": map[string]any{
+			"must": []map[string]any{
+				{"key": "occurrence_count", "range": map[string]any{"gte": minRuns}},
+			},
+		},
+	}
+	data, err := qdrantPost("/collections/kae_meta_graph/points/scroll", body)
+	if err != nil {
+		return "", fmt.Errorf("meta-graph scroll failed: %w", err)
+	}
+
+	result, _ := data["result"].(map[string]any)
+	points, _ := result["points"].([]any)
+
+	type attractor struct {
+		Concept    string
+		Occurrences int
+		TotalWeight float64
+		AvgAnomaly  float64
+		Domains     []string
+	}
+
+	attrs := make([]attractor, 0, len(points))
+	for _, p := range points {
+		pt := p.(map[string]any)
+		payload, _ := pt["payload"].(map[string]any)
+		domains := []string{}
+		if ds, ok := payload["domains"].([]any); ok {
+			for _, d := range ds {
+				if s, ok := d.(string); ok {
+					domains = append(domains, s)
+				}
+			}
+		}
+		attrs = append(attrs, attractor{
+			Concept:     strVal(payload, "concept"),
+			Occurrences: intVal(payload, "occurrence_count"),
+			TotalWeight: floatVal(payload, "total_weight"),
+			AvgAnomaly:  floatVal(payload, "avg_anomaly"),
+			Domains:     domains,
+		})
+	}
+
+	sort.Slice(attrs, func(i, j int) bool {
+		return attrs[i].Occurrences > attrs[j].Occurrences
+	})
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## Meta-Graph Attractors (min %d runs)\n\n", minRuns))
+	if len(attrs) == 0 {
+		sb.WriteString("No attractors found yet. Run more KAE cycles to build the meta-graph.\n")
+		return sb.String(), nil
+	}
+	sb.WriteString(fmt.Sprintf("Found **%d attractor concepts** converging across runs.\n\n", len(attrs)))
+	for i, a := range attrs {
+		sb.WriteString(fmt.Sprintf("%d. **%s**\n", i+1, a.Concept))
+		sb.WriteString(fmt.Sprintf("   runs: %d | weight: %.1f | avg anomaly: %.2f | domains: %s\n\n",
+			a.Occurrences, a.TotalWeight, a.AvgAnomaly, strings.Join(a.Domains, ", ")))
+	}
+	return sb.String(), nil
+}
+
+func toolDomainAnalysis() (string, error) {
+	data, err := qdrantPost("/collections/kae_meta_graph/points/scroll", map[string]any{
+		"limit":        2000,
+		"with_payload": true,
+		"with_vector":  false,
+	})
+	if err != nil {
+		return "", fmt.Errorf("meta-graph scroll failed: %w", err)
+	}
+
+	result, _ := data["result"].(map[string]any)
+	points, _ := result["points"].([]any)
+
+	type nodeInfo struct {
+		concept string
+		domains []string
+		weight  float64
+	}
+
+	nodes := make([]nodeInfo, 0, len(points))
+	for _, p := range points {
+		pt := p.(map[string]any)
+		payload, _ := pt["payload"].(map[string]any)
+		domains := []string{}
+		if ds, ok := payload["domains"].([]any); ok {
+			for _, d := range ds {
+				if s, ok := d.(string); ok && s != "" {
+					domains = append(domains, s)
+				}
+			}
+		}
+		nodes = append(nodes, nodeInfo{
+			concept: strVal(payload, "concept"),
+			domains: domains,
+			weight:  floatVal(payload, "total_weight"),
+		})
+	}
+
+	// Find bridges
+	type bridge struct {
+		concept string
+		d1, d2  string
+		weight  float64
+	}
+	var bridges []bridge
+	allDomains := map[string]bool{}
+	bridgedPairs := map[string]bool{}
+
+	for _, n := range nodes {
+		for _, d := range n.domains {
+			allDomains[d] = true
+		}
+		if len(n.domains) >= 2 {
+			for i := 0; i < len(n.domains); i++ {
+				for j := i + 1; j < len(n.domains); j++ {
+					d1, d2 := n.domains[i], n.domains[j]
+					if d1 > d2 {
+						d1, d2 = d2, d1
+					}
+					bridgedPairs[d1+"||"+d2] = true
+					bridges = append(bridges, bridge{n.concept, d1, d2, n.weight})
+				}
+			}
+		}
+	}
+	sort.Slice(bridges, func(i, j int) bool { return bridges[i].weight > bridges[j].weight })
+
+	// Find moats
+	domainList := make([]string, 0, len(allDomains))
+	for d := range allDomains {
+		domainList = append(domainList, d)
+	}
+	sort.Strings(domainList)
+
+	var sb strings.Builder
+	sb.WriteString("## Domain Boundary Analysis\n\n")
+
+	sb.WriteString(fmt.Sprintf("### Cross-Domain Bridges (%d)\n\n", len(bridges)))
+	if len(bridges) == 0 {
+		sb.WriteString("No bridge concepts yet.\n\n")
+	} else {
+		for _, b := range bridges {
+			sb.WriteString(fmt.Sprintf("- **%s** bridges `%s` ↔ `%s` (weight %.1f)\n", b.concept, b.d1, b.d2, b.weight))
+		}
+		sb.WriteString("\n")
+	}
+
+	moatCount := 0
+	var moatLines []string
+	for i := 0; i < len(domainList); i++ {
+		for j := i + 1; j < len(domainList); j++ {
+			d1, d2 := domainList[i], domainList[j]
+			if !bridgedPairs[d1+"||"+d2] {
+				moatLines = append(moatLines, fmt.Sprintf("- `%s` ↔ `%s`", d1, d2))
+				moatCount++
+			}
+		}
+	}
+	sb.WriteString(fmt.Sprintf("### Potential Domain Moats (%d)\n\n", moatCount))
+	if moatCount == 0 {
+		sb.WriteString("All domain pairs are bridged.\n")
+	} else {
+		sb.WriteString("Domain pairs with no bridging concepts:\n\n")
+		for _, l := range moatLines {
+			sb.WriteString(l + "\n")
+		}
+	}
+	return sb.String(), nil
+}
+
 // ── MCP server loop ───────────────────────────────────────────────────────────
 
 var tools = []ToolDef{
@@ -565,6 +742,21 @@ var tools = []ToolDef{
 			},
 			Required: []string{"seed"},
 		},
+	},
+	{
+		Name:        "kae_meta_attractors",
+		Description: "Show attractor concepts from the persistent meta-graph — concepts that emerged independently across multiple KAE runs.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"min_runs": {Type: "integer", Description: "Minimum number of runs a concept must appear in to be an attractor (default 3)"},
+			},
+		},
+	},
+	{
+		Name:        "kae_domain_analysis",
+		Description: "Show domain bridge and moat analysis — concepts that connect domains (bridges) and domain pairs with no connecting concepts (moats).",
+		InputSchema: InputSchema{Type: "object", Properties: map[string]Property{}},
 	},
 }
 
@@ -671,6 +863,16 @@ func dispatchTool(name string, args map[string]any) (string, error) {
 		}
 		model, _ := args["model"].(string)
 		return toolStartRun(seed, cycles, model)
+
+	case "kae_meta_attractors":
+		minRuns := 3
+		if m, ok := args["min_runs"].(float64); ok {
+			minRuns = int(m)
+		}
+		return toolMetaAttractors(minRuns)
+
+	case "kae_domain_analysis":
+		return toolDomainAnalysis()
 
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)

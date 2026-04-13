@@ -2,12 +2,14 @@
 
 ## Repo structure
 
-Two independent Go modules in one repo:
+Four independent Go modules in one repo:
 
 | Path | Module | Binary | Purpose |
 |------|--------|--------|---------|
 | `/` | `github.com/meistro57/kae` | `./kae` | KAE ingestion engine (chunking, embedding, Qdrant write) |
 | `kae-lens/` | `github.com/meistro/kae` | `./kae-lens/lens` | Lens synthesis agent (reasoning, findings, corrections) |
+| `mcp/` | standalone | `./mcp/kae_mcp` | MCP server exposing KAE/Qdrant tools to Claude |
+| `kae-analyzer/` | standalone | `./kae-analyzer/kae-analyzer` | CLI for post-run inspection |
 
 ## Build
 
@@ -49,11 +51,32 @@ Config lives at `kae-lens/config/lens.yaml`.
 | Collection | ID type | Purpose |
 |---|---|---|
 | `kae_chunks` | uint64 numeric | Knowledge base — KAE writes, Lens reads |
+| `kae_nodes` | uint64 numeric | Per-run concept nodes with weights and anomaly flags |
+| `kae_meta_graph` | uint64 numeric | Persistent cross-run concept graph (Tier 2) |
 | `kae_lens_findings` | UUID | Lens output findings |
 
-### MCP server
+### MCP servers
 
-Configured in `~/.claude.json` pointing at `http://localhost:6333`. Restart Claude Code to activate.
+Two MCP servers are configured in `~/.claude.json`:
+- **`qdrant`** — generic Qdrant find/store (via `mcp-server-qdrant` uvx package)
+- **`kae`** — custom KAE tools: `qdrant_collections`, `qdrant_list_runs`, `qdrant_top_nodes`, `qdrant_search_chunks`, `qdrant_compare_runs`, `kae_start_run`, `kae_meta_attractors`, `kae_domain_analysis`
+
+Restart Claude Code after changing MCP config.
+
+## KAE CLI (Tier 2 flags)
+
+```bash
+# After a run, view attractor concepts (appeared in 3+ independent runs)
+./kae --attractors --attractor-min-runs 3
+
+# Domain bridge/moat analysis from meta-graph
+./kae --domain-analysis
+
+# Skip meta-graph update for this run
+./kae --no-meta-graph --seed "test topic"
+```
+
+The meta-graph (`kae_meta_graph`) is updated automatically after every run unless `--no-meta-graph` is set.
 
 ## Key invariants
 

@@ -11,6 +11,7 @@ import (
 	"github.com/meistro57/kae/internal/agent"
 	"github.com/meistro57/kae/internal/anomaly"
 	"github.com/meistro57/kae/internal/config"
+	"github.com/meistro57/kae/internal/metagraph"
 	"github.com/meistro57/kae/internal/report"
 	"github.com/meistro57/kae/internal/store"
 	"github.com/meistro57/kae/internal/ui"
@@ -67,6 +68,16 @@ func main() {
 	minRuns := flag.Int("min-runs", 2,
 		"Minimum distinct runs for a cluster to appear in meta-analysis")
 
+	// ── Tier 2 flags ───────────────────────────────────────────────────────────
+	showAttractors := flag.Bool("attractors", false,
+		"Print attractor report from persistent meta-graph and exit")
+	attractorMinRuns := flag.Int("attractor-min-runs", 3,
+		"Minimum run occurrences for a concept to be flagged as an attractor")
+	domainAnalysis := flag.Bool("domain-analysis", false,
+		"Print domain bridge/moat analysis from meta-graph and exit")
+	noMetaGraph := flag.Bool("no-meta-graph", false,
+		"Skip updating the persistent meta-graph after this run")
+
 	flag.Parse()
 
 	if *debug {
@@ -117,6 +128,28 @@ func main() {
 		return
 	}
 
+	// ── Tier 2: attractor / domain-analysis modes ──────────────────────────────
+	if *showAttractors {
+		qdrant := store.NewClient(cfg.QdrantURL)
+		md, err := metagraph.AttractorReport(qdrant, *attractorMinRuns)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "attractor report error:", err)
+			os.Exit(1)
+		}
+		fmt.Print(md)
+		return
+	}
+	if *domainAnalysis {
+		qdrant := store.NewClient(cfg.QdrantURL)
+		nodes, err := qdrant.GetAllMetaNodes(0)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "meta-graph fetch error:", err)
+			os.Exit(1)
+		}
+		fmt.Print(metagraph.DomainBoundaryReport(nodes))
+		return
+	}
+
 	// Require at least one provider key for a normal run
 	if err := cfg.Validate(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -152,6 +185,9 @@ func main() {
 
 		saveReport(eng)
 		saveGraph(eng, cfg.SaveGraphPath)
+		if !*noMetaGraph {
+			mergeMetaGraph(eng.RunID(), cfg.QdrantURL, *attractorMinRuns)
+		}
 
 		if *autoRestart && eng.StoppedByStagnation() {
 			fmt.Fprintln(os.Stderr, "Stagnation detected — restarting fresh run...")
@@ -274,6 +310,16 @@ func saveReport(eng *agent.Engine) {
 		return
 	}
 	fmt.Println("html report saved:", htmlPath)
+}
+
+func mergeMetaGraph(runID, qdrantURL string, attractorMinRuns int) {
+	qdrant := store.NewClient(qdrantURL)
+	merged, created, err := metagraph.MergeRun(qdrant, runID, attractorMinRuns)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "meta-graph merge error: %v\n", err)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "meta-graph updated: %d merged, %d new concepts\n", merged, created)
 }
 
 func saveGraph(eng *agent.Engine, path string) {
