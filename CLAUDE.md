@@ -14,7 +14,7 @@ Four independent Go modules in one repo:
 ## Build
 
 ```bash
-# From kae-lens/ — builds both binaries
+# From kae-lens/ — builds all four binaries (kae, lens, kae_mcp, kae-analyzer)
 make build
 
 # Individual

@@ -33,14 +33,14 @@ go install
 ## Quick Start
 
 ```bash
-# See all 23 runs in Qdrant
+# See all runs in Qdrant
 ./kae-analyzer runs
 
-# Analyze your first pseudopsychology run
+# Analyze a specific run (use a run ID from 'runs' output)
 ./kae-analyzer analyze --run-id run_1775826869
 
-# Compare the 3 divergence runs
-./kae-analyzer compare --runs run_1775826869,run_1775829660,run_1775831260
+# Compare runs for convergence
+./kae-analyzer compare --runs run_1775826869,run_1775829660
 
 # Find high-weight anomalies
 ./kae-analyzer anomalies --min-weight 4.0
@@ -69,7 +69,7 @@ Shows table of all runs with:
 | run_1775829660 | 96    | 23        | 7.28       | 24.0%     |
 | run_1775831260 | 96    | 24        | 6.20       | 25.0%     |
 +----------------+-------+-----------+------------+-----------+
-Total runs: 23
+Total runs: N
 ```
 
 ### Analyze Specific Run
@@ -199,66 +199,20 @@ Exports full analysis data for:
 ```
 kae-analyzer (Go CLI)
        ↓
-   exec.Command (spawns MCP server)
+   Qdrant REST API (http://localhost:6333)
        ↓
-   kae-qdrant MCP Server (Node.js)
+   kae_nodes collection
        ↓
-   Qdrant Vector DB
-       ↓
-   Real KAE run data (23+ runs, 1,636 concept nodes)
+   KAE run data
 ```
 
-The Go app:
-1. Spawns your MCP server via `npx`
-2. Passes tool calls via environment variables
-3. Parses markdown output with regex
-4. Returns structured data
-
-## MCP Inspector
-
-You can also test your MCP server visually:
-
-```bash
-npx @modelcontextprotocol/inspector node /home/mark/.local/share/claude/mcp/kae-qdrant/build/index.js
-```
-
-Opens a web UI to:
-- Call tools interactively
-- See raw responses
-- Debug tool parameters
-
-Perfect for verifying the markdown format before parsing!
+The Go app queries Qdrant directly via HTTP — no MCP server, no Node.js, no spawned processes. Configure the Qdrant URL with `--qdrant` flag (default: `http://localhost:6333`).
 
 ## Real Data Examples
 
-Your current Qdrant database contains:
-
-**Collections:**
-- `kae_chunks`: 7,596 source passages
-- `kae_nodes`: 1,636 concept nodes
-- `marks_gpt_history`: 2,228 conversations
-- `qmu_forum`: 315 forum posts
-
-**Sample Runs:**
-- `run_1775826869`: 75 nodes, 22 anomalies, max weight 7.70
-- `run_1775829660`: 96 nodes, 23 anomalies, max weight 7.28
-- `run_1775831260`: 96 nodes, 24 anomalies, max weight 6.20
-- `run_1775844576`: 40 nodes, 8 anomalies, max weight **15.82** 🔥
+Use `./kae-analyzer runs` and `./kae-analyzer stats` to see current counts — the database grows with every KAE run.
 
 ## Advanced Usage
-
-### Analyze Your 6 Pseudopsychology Runs
-
-```bash
-# Find all pseudopsychology run IDs
-./kae-analyzer runs | grep pseudo
-
-# Compare them
-./kae-analyzer compare --runs run_XXX,run_YYY,run_ZZZ,run_AAA,run_BBB,run_CCC
-
-# Convergence analysis
-./kae-analyzer convergence --seed pseudopsychology
-```
 
 ### Find Confabulation Candidates
 
@@ -292,10 +246,9 @@ Future enhancements:
 - [ ] Markdown report generation
 - [ ] Statistical correlation analysis
 
-## Built for KAE by Meistro 🏍️
+## Part of the KAE ecosystem
 
-Part of the Knowledge Archaeology Engine visualization toolchain:
-- **kae_live_parser.py** - Parse markdown reports → JSON
-- **kae-genealogy-viewer.html** - Live timeline visualization
-- **kae-analyzer** - CLI analysis tool (you are here)
-- **kae-qdrant MCP server** - Vector database bridge
+- **kae** — core archaeology engine (chunking, embedding, graph, Qdrant write)
+- **kae-lens** — autonomous post-processing layer (synthesis, corrections, findings)
+- **kae-analyzer** — CLI analysis tool (you are here)
+- **mcp/kae_mcp** — MCP server exposing KAE tools to AI assistants

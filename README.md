@@ -149,6 +149,15 @@ go run . --ensemble --models "..." --branch-threshold 0.7 --max-branches 4
 # Cross-run meta-analysis — find "convergent heresies" across past runs
 go run . --analyze --min-runs 3
 
+# Tier 2: show attractor concepts (emerged in 3+ independent runs)
+go run . --attractors --attractor-min-runs 3
+
+# Tier 2: domain bridge/moat analysis from persistent meta-graph
+go run . --domain-analysis
+
+# Tier 2: skip updating the meta-graph for this run
+go run . --no-meta-graph --seed "quick test"
+
 # Limit cycles
 go run . --cycles 50
 
@@ -298,6 +307,8 @@ go build -o kae-mcp .
 | `qdrant_search_chunks` | Keyword search over ingested source passages |
 | `qdrant_compare_runs` | Compare runs for independently converging concepts |
 | `kae_start_run` | Start a new KAE run in headless mode, returns the report |
+| `kae_meta_attractors` | Show attractor concepts from the persistent meta-graph (Tier 2) |
+| `kae_domain_analysis` | Show domain bridges and moats from the meta-graph (Tier 2) |
 
 ---
 
@@ -360,7 +371,7 @@ kae/
 ├── kae-analyzer/                # Post-run analysis CLI
 │   └── main.go                  # runs, analyze, compare, anomalies, search, convergence, export
 └── mcp/                         # MCP server for AI assistant integration
-    └── main.go                  # JSON-RPC over stdio — 6 tools
+    └── main.go                  # JSON-RPC over stdio — 8 tools
 ```
 
 ---
@@ -441,7 +452,7 @@ All sources run in parallel each cycle. CORE is silently skipped if the key is a
 | Setting | Detail |
 |---------|--------|
 | Version | `qdrant/qdrant:v1.17.1` (pinned) |
-| Collections | `kae_chunks` (text chunks), `kae_nodes` (graph), `kae_lens_findings` (Lens findings) |
+| Collections | `kae_chunks` (text chunks), `kae_nodes` (graph), `kae_meta_graph` (cross-run meta-graph), `kae_lens_findings` (Lens findings) |
 | Distance | Cosine |
 | Payload indexes | `domain`, `label` (keyword, created before HNSW builds) |
 | Batch size | 64 points per upsert request |
@@ -484,8 +495,12 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 - [x] **Lens anomaly correction** — data-grounded second LLM pass resolves anomaly/contradiction findings against source evidence
 - [x] **Lens performance tuning** — per-call LLM timeout, relaxed density thresholds, paced batch polling
 
-### Tier 2+ — Coming Next
-- [ ] Persistent meta-graph across runs
+### Tier 2 — Knowledge Graph Intelligence (complete)
+- [x] **Persistent meta-graph** (`kae_meta_graph`) — cross-run concept aggregation with attractor detection
+- [x] **Citation chain excavation** — BFS over Semantic Scholar citation graph; suppressed lineage detection
+- [x] **Domain boundary detection** — bridge concepts (cross-domain connectors) and moats (isolated domain pairs)
+
+### Tier 3+ — Coming Next
 - [ ] Active learning / adaptive ingestion
 - [ ] Self-improvement feedback loop
 - [ ] Lens Pass 2 — reason over findings to build third-order knowledge structures

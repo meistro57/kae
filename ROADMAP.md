@@ -20,8 +20,12 @@
 - ✅ Cross-run anomaly clustering (`--analyze`)
 - ✅ Gutenberg ingestion fixed via gutendex formats map
 
-**Remaining Gaps (Tier 2+):**
-- ⚠️ No persistent meta-graph across runs
+**Tier 2 (complete):**
+- ✅ Persistent meta-graph across runs (`kae_meta_graph`)
+- ✅ Citation chain excavation (Semantic Scholar BFS + suppressed lineage detection)
+- ✅ Domain boundary detection (bridges + moats)
+
+**Remaining Gaps (Tier 3+):**
 - ⚠️ Limited visualization capabilities
 - ⚠️ No active learning or adaptive ingestion
 - ⚠️ No self-improvement feedback loop
@@ -251,7 +255,7 @@ kae report anomalies --format markdown --email mark@quantummindsunited.com
 
 ---
 
-## 🧠 TIER 2: Knowledge Graph Intelligence
+## ✅ TIER 2: Knowledge Graph Intelligence — COMPLETE
 
 ### 2.1 Persistent Meta-Graph
 
