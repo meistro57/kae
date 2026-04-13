@@ -150,6 +150,35 @@ func (c *Client) MarkProcessed(ctx context.Context, collection string, ids []str
 	return nil
 }
 
+// ClearProcessedFlags resets lens_processed to false for all points in the
+// collection that are not Lens-generated correction chunks. This is used by
+// the --reprocess manual run mode to force a full re-scan of the knowledge base.
+func (c *Client) ClearProcessedFlags(ctx context.Context, collection string) error {
+	wait := true
+	_, err := c.inner.SetPayload(ctx, &qdrant.SetPayloadPoints{
+		CollectionName: collection,
+		Wait:           &wait,
+		Payload: map[string]*qdrant.Value{
+			"lens_processed": qdrant.NewValueBool(false),
+		},
+		// Apply to all points that are NOT Lens correction chunks.
+		// Correction chunks (lens_correction=true) should never be re-processed.
+		PointsSelector: &qdrant.PointsSelector{
+			PointsSelectorOneOf: &qdrant.PointsSelector_Filter{
+				Filter: &qdrant.Filter{
+					MustNot: []*qdrant.Condition{
+						qdrant.NewMatchBool("lens_correction", true),
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("clearing processed flags in %q: %w", collection, err)
+	}
+	return nil
+}
+
 // QueryNeighbors finds the top-N nearest neighbors of a given vector.
 func (c *Client) QueryNeighbors(ctx context.Context, collection string, vector []float32, limit uint64, scoreThreshold float32) ([]*qdrant.ScoredPoint, error) {
 	result, err := c.inner.Query(ctx, &qdrant.QueryPoints{

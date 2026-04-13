@@ -2,7 +2,9 @@ package lens
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -177,4 +179,69 @@ func (w *Watcher) emitStats(ctx context.Context) {
 // newBatchID generates a short timestamp-based batch identifier.
 func newBatchID() string {
 	return time.Now().Format("20060102-150405.000")
+}
+
+// RunOnce drains all unprocessed points from the knowledge collection and
+// processes them synchronously, printing progress to stderr. It returns when
+// the queue is empty or ctx is cancelled.
+//
+// Use this for on-demand / manual runs instead of the continuous polling loop.
+// If reprocess is true the caller must have already cleared lens_processed
+// flags (via qdrantclient.ClearProcessedFlags) before calling RunOnce.
+func (w *Watcher) RunOnce(ctx context.Context) (totalFindings int, err error) {
+	collection := w.cfg.Qdrant.KnowledgeCollection
+	batchSize := uint32(w.cfg.Watcher.BatchSize)
+	batchNum := 0
+
+	fmt.Fprintf(os.Stderr, "[lens] scanning %q for unprocessed points (batch size %d)...\n",
+		collection, batchSize)
+
+	for {
+		if ctx.Err() != nil {
+			return totalFindings, ctx.Err()
+		}
+
+		points, err := w.qc.ScrollUnprocessed(ctx, collection, batchSize)
+		if err != nil {
+			return totalFindings, fmt.Errorf("scroll: %w", err)
+		}
+		if len(points) == 0 {
+			break // queue drained
+		}
+
+		batchNum++
+		batchID := newBatchID()
+
+		// Mark processed optimistically before reasoning starts
+		ids := make([]string, 0, len(points))
+		for _, p := range points {
+			if p.Id != nil {
+				ids = append(ids, qdrantclient.PointIDStr(p.Id))
+			}
+		}
+		if markErr := w.qc.MarkProcessed(ctx, collection, ids); markErr != nil {
+			log.Printf("[watcher] mark processed: %v", markErr)
+		}
+
+		fmt.Fprintf(os.Stderr, "[lens] batch %d — %d points\n", batchNum, len(points))
+
+		n, batchErr := w.reasoner.ProcessBatch(ctx, batchID, points)
+		if batchErr != nil {
+			log.Printf("[watcher] batch %d error: %v", batchNum, batchErr)
+		}
+		totalFindings += n
+
+		fmt.Fprintf(os.Stderr, "[lens] batch %d — %d findings produced\n", batchNum, n)
+
+		// Emit events for any dashboard listeners
+		w.emit(graph.BatchDoneEvent{BatchID: batchID, FindingsCount: n})
+
+		// If we got a partial batch, we've hit the end of the queue
+		if len(points) < int(batchSize) {
+			break
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "[lens] done — %d batches, %d total findings\n", batchNum, totalFindings)
+	return totalFindings, nil
 }

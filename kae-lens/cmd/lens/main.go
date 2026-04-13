@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -26,6 +27,8 @@ func main() {
 	// ── Flags ──
 	configPath := flag.String("config", "config/lens.yaml", "path to lens config file")
 	noTUI := flag.Bool("no-tui", false, "disable TUI, log to stdout only")
+	once := flag.Bool("once", false, "process all unprocessed points once then exit (no daemon loop)")
+	reprocess := flag.Bool("reprocess", false, "clear all processed flags and re-scan everything (implies --once)")
 	flag.Parse()
 
 	// ── Logging setup ──
@@ -114,6 +117,25 @@ func main() {
 	writer := lens.NewWriter(qc, llmClient, cfg.Qdrant.FindingsCollection, cfg.Qdrant.KnowledgeCollection)
 	reasoner := lens.NewReasoner(qc, density, synthesizer, writer, events, cfg.Qdrant.KnowledgeCollection)
 	watcher := lens.NewWatcher(cfg, qc, reasoner, events)
+
+	// ── Manual run mode (--once / --reprocess) ────────────────────────────────
+	if *once || *reprocess {
+		if *reprocess {
+			fmt.Fprintf(os.Stderr, "[lens] --reprocess: clearing processed flags on %q...\n",
+				cfg.Qdrant.KnowledgeCollection)
+			if err := qc.ClearProcessedFlags(ctx, cfg.Qdrant.KnowledgeCollection); err != nil {
+				log.Fatalf("[lens] clear processed flags: %v", err)
+			}
+			fmt.Fprintf(os.Stderr, "[lens] flags cleared — starting full scan\n")
+		}
+
+		n, err := watcher.RunOnce(ctx)
+		if err != nil && err != context.Canceled {
+			log.Printf("[lens] run-once error: %v", err)
+		}
+		fmt.Fprintf(os.Stderr, "[lens] manual run complete — %d findings written\n", n)
+		return
+	}
 
 	// ── Web dashboard ──
 	broker := web.NewBroker()
