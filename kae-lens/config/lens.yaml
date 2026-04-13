@@ -6,10 +6,10 @@ qdrant:
   findings_collection: "kae_lens_findings"
 
 watcher:
-  poll_interval_seconds: 60   # was 30 — gives synthesizer breathing room before next wave
-  batch_size: 10
-  max_concurrent_batches: 3   # was 2 — one extra slot reduces skipped polls
-  idle_polls_before_reprocess: 3  # after 3 empty polls (~3 min), clear processed flags and restart
+  poll_interval_seconds: 30   # reduced — dispatch new batches faster when queue is large
+  batch_size: 50              # was 10 — 5x throughput; each goroutine processes 50 points sequentially
+  max_concurrent_batches: 3   # 3 goroutines × 50 points = 150 points in flight at once
+  idle_polls_before_reprocess: 3  # after 3 empty polls (~90s), clear processed flags and restart
 
 density:
   thresholds:
