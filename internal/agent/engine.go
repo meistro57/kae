@@ -20,19 +20,19 @@ import (
 type Phase string
 
 const (
-	PhaseIdle      Phase = "IDLE"
-	PhaseSeed      Phase = "SEEDING"
-	PhaseIngest    Phase = "INGESTING"
-	PhaseEmbed     Phase = "EMBEDDING"
-	PhaseSearch    Phase = "SEARCHING MEMORY"
-	PhaseThink     Phase = "THINKING"
-	PhaseConnect   Phase = "CONNECTING"
-	PhaseScore     Phase = "SCORING CONTRADICTIONS"
-	PhaseAnomaly   Phase = "ANOMALY SCAN"
-	PhasePlan      Phase = "PLANNING"
-	PhaseReport    Phase = "UPDATING REPORT"
-	PhaseStable    Phase = "GRAPH STABLE"
-	PhaseEnsemble  Phase = "ENSEMBLE REASONING"
+	PhaseIdle     Phase = "IDLE"
+	PhaseSeed     Phase = "SEEDING"
+	PhaseIngest   Phase = "INGESTING"
+	PhaseEmbed    Phase = "EMBEDDING"
+	PhaseSearch   Phase = "SEARCHING MEMORY"
+	PhaseThink    Phase = "THINKING"
+	PhaseConnect  Phase = "CONNECTING"
+	PhaseScore    Phase = "SCORING CONTRADICTIONS"
+	PhaseAnomaly  Phase = "ANOMALY SCAN"
+	PhasePlan     Phase = "PLANNING"
+	PhaseReport   Phase = "UPDATING REPORT"
+	PhaseStable   Phase = "GRAPH STABLE"
+	PhaseEnsemble Phase = "ENSEMBLE REASONING"
 )
 
 type Event struct {

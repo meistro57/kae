@@ -12,10 +12,10 @@ import (
 
 // AnomalyCluster groups semantically similar anomaly nodes from Qdrant.
 type AnomalyCluster struct {
-	Center  string             // label of the most representative / heaviest node
+	Center  string // label of the most representative / heaviest node
 	Members []*store.AnomalyNode
-	RunIDs  []string           // distinct run IDs that contributed members
-	Weight  float64            // highest anomaly weight in the cluster
+	RunIDs  []string // distinct run IDs that contributed members
+	Weight  float64  // highest anomaly weight in the cluster
 }
 
 // MetaAnalyzer fetches anomaly nodes from Qdrant and clusters them.

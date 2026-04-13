@@ -167,10 +167,10 @@ func parseAnchor(p *qdrant.RetrievedPoint) (*anchorPoint, error) {
 	// Extract payload — support both kae_knowledge and kae_chunks schemas
 	payload := qdrantclient.PayloadToMap(p.Payload)
 
-	title   := stringFromMap(payload, "title", "source")
+	title := stringFromMap(payload, "title", "source")
 	content := stringFromMap(payload, "content", "text")
-	domain  := stringFromMap(payload, "domain", "topic")
-	url     := stringFromMap(payload, "url")
+	domain := stringFromMap(payload, "domain", "topic")
+	url := stringFromMap(payload, "url")
 
 	// Use a sensible fallback title so logs are readable
 	if title == "" {

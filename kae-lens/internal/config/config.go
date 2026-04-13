@@ -20,11 +20,11 @@ type LensConfig struct {
 }
 
 type QdrantConfig struct {
-	Host                  string `yaml:"host"`
-	Port                  int    `yaml:"port"`
-	APIKey                string `yaml:"api_key"`
-	KnowledgeCollection   string `yaml:"knowledge_collection"`
-	FindingsCollection    string `yaml:"findings_collection"`
+	Host                string `yaml:"host"`
+	Port                int    `yaml:"port"`
+	APIKey              string `yaml:"api_key"`
+	KnowledgeCollection string `yaml:"knowledge_collection"`
+	FindingsCollection  string `yaml:"findings_collection"`
 }
 
 type WatcherConfig struct {
@@ -60,12 +60,12 @@ type DensityConfig struct {
 }
 
 type LLMConfig struct {
-	ReasoningModel      string  `yaml:"reasoning_model"`
-	FastModel           string  `yaml:"fast_model"`
-	OpenRouterBaseURL   string  `yaml:"openrouter_base_url"`
-	OpenRouterAPIKey    string  `yaml:"openrouter_api_key"`
-	MinConfidence       float64 `yaml:"min_confidence"`
-	FastBatchThreshold  int     `yaml:"fast_batch_threshold"`
+	ReasoningModel     string  `yaml:"reasoning_model"`
+	FastModel          string  `yaml:"fast_model"`
+	OpenRouterBaseURL  string  `yaml:"openrouter_base_url"`
+	OpenRouterAPIKey   string  `yaml:"openrouter_api_key"`
+	MinConfidence      float64 `yaml:"min_confidence"`
+	FastBatchThreshold int     `yaml:"fast_batch_threshold"`
 }
 
 type EmbeddingConfig struct {
@@ -81,14 +81,15 @@ type WebConfig struct {
 }
 
 type TUIConfig struct {
-	Enabled       bool `yaml:"enabled"`
-	RefreshMs     int  `yaml:"refresh_ms"`
-	MaxFeedItems  int  `yaml:"max_feed_items"`
+	Enabled      bool `yaml:"enabled"`
+	RefreshMs    int  `yaml:"refresh_ms"`
+	MaxFeedItems int  `yaml:"max_feed_items"`
 }
 
 // Load reads a lens config from the given YAML file path.
 // Environment variables override yaml values for sensitive fields:
-//   LENS_QDRANT_API_KEY, LENS_OPENROUTER_API_KEY, LENS_OPENAI_API_KEY
+//
+//	LENS_QDRANT_API_KEY, LENS_OPENROUTER_API_KEY, LENS_OPENAI_API_KEY
 func Load(path string) (*LensConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

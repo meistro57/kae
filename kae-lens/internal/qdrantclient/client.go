@@ -14,8 +14,8 @@ import (
 
 // Client wraps the Qdrant gRPC client with helpers for KAE/Lens operations.
 type Client struct {
-	inner  *qdrant.Client
-	cfg    Config
+	inner *qdrant.Client
+	cfg   Config
 }
 
 // Config holds connection parameters for the Qdrant client.

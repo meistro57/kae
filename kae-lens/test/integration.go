@@ -70,7 +70,7 @@ func main() {
 	// 3. Test density calculator
 	fmt.Println("📐 Testing density calculator...")
 	dc := lens.NewDensityCalculator(cfg, qc)
-	
+
 	// Test classify using exported method from density.go
 	testCases := []struct {
 		count int
@@ -92,13 +92,13 @@ func main() {
 
 	// 4. Test LLM client (basic connectivity)
 	fmt.Println("🤖 Testing LLM client...")
-	
+
 	// Check API keys
 	openrouterKey := os.Getenv("OPENROUTER_API_KEY")
 	if cfg.LLM.OpenRouterAPIKey != "" {
 		openrouterKey = cfg.LLM.OpenRouterAPIKey
 	}
-	
+
 	openaiKey := os.Getenv("OPENAI_API_KEY")
 	if cfg.Embedding.OpenAIAPIKey != "" {
 		openaiKey = cfg.Embedding.OpenAIAPIKey
@@ -118,8 +118,8 @@ func main() {
 
 		// Test fast chat (cheap test)
 		fmt.Println("   Testing fast chat...")
-		resp, err := llmClient.FastChat(ctx, 
-			"You are a test assistant.", 
+		resp, err := llmClient.FastChat(ctx,
+			"You are a test assistant.",
 			"Reply with exactly: 'Test successful'")
 		if err != nil {
 			fmt.Printf("❌ FastChat failed: %v\n", err)

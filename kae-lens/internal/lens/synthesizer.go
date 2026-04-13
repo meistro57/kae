@@ -18,8 +18,8 @@ import (
 // Synthesizer calls the LLM to reason over an anchor point and its neighbors,
 // producing structured findings.
 type Synthesizer struct {
-	llm    *llm.Client
-	cfg    *config.LensConfig
+	llm *llm.Client
+	cfg *config.LensConfig
 }
 
 // NewSynthesizer creates a Synthesizer.

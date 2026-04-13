@@ -9,11 +9,11 @@ import (
 
 // Client wraps the OpenAI-compatible client pointed at OpenRouter.
 type Client struct {
-	inner            *openai.Client
-	embeddingClient  *openai.Client
-	reasoningModel   string
-	fastModel        string
-	embeddingModel   string
+	inner           *openai.Client
+	embeddingClient *openai.Client
+	reasoningModel  string
+	fastModel       string
+	embeddingModel  string
 }
 
 // Config holds LLM + embedding configuration.

@@ -429,40 +429,40 @@ func toolStartRun(seed string, cycles int, model string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("could not locate executable: %w", err)
 	}
-	
+
 	kaePath := filepath.Join(filepath.Dir(exePath), "..", "kae")
 	if _, err := os.Stat(kaePath); err != nil {
 		return "", fmt.Errorf("kae binary not found at %s: %w", kaePath, err)
 	}
-	
+
 	// Build command
 	args := []string{"-seed", seed, "-cycles", fmt.Sprintf("%d", cycles), "-headless"}
 	if model != "" {
 		args = append(args, "-model", model)
 	}
-	
+
 	cmd := exec.Command(kaePath, args...)
 	cmd.Dir = filepath.Join(filepath.Dir(exePath), "..") // ~/kae
-	
+
 	// Capture both stdout and stderr
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
-	
+
 	// Run with timeout (cycles * 90 seconds per cycle max)
 	timeoutSec := cycles * 90
 	if timeoutSec > 600 {
 		timeoutSec = 600 // max 10 minutes
 	}
-	
+
 	// Start and wait with timeout
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("failed to start kae: %w", err)
 	}
-	
+
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	
+
 	select {
 	case err := <-done:
 		if err != nil {
@@ -472,13 +472,13 @@ func toolStartRun(seed string, cycles int, model string) (string, error) {
 		cmd.Process.Kill()
 		return "", fmt.Errorf("kae run timed out after %d seconds", timeoutSec)
 	}
-	
+
 	// Combine output
 	output := stderrBuf.String()
 	if stdoutBuf.Len() > 0 {
 		output = stdoutBuf.String() + "\n" + output
 	}
-	
+
 	// Extract report from output (look for markdown report pattern)
 	lines := strings.Split(output, "\n")
 	var reportLines []string
@@ -491,12 +491,12 @@ func toolStartRun(seed string, cycles int, model string) (string, error) {
 			reportLines = append(reportLines, line)
 		}
 	}
-	
+
 	if len(reportLines) > 0 {
 		report := strings.Join(reportLines, "\n")
 		return fmt.Sprintf("## KAE Run Completed\n\nSeed: `%s` | Cycles: %d\n\n%s", seed, cycles, report), nil
 	}
-	
+
 	// Fallback: return last 50 lines of output
 	start := len(lines) - 50
 	if start < 0 {

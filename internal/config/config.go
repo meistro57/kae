@@ -42,7 +42,7 @@ type Config struct {
 	MaxBranches      int     // 0 = unlimited
 
 	// Meta-analysis (Tier 1.3)
-	RunAnalysis    bool
+	RunAnalysis     bool
 	MinAnalysisRuns int
 }
 

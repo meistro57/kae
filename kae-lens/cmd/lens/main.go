@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/meistro/kae/collections"
 	"github.com/meistro/kae/internal/config"
 	"github.com/meistro/kae/internal/graph"
 	"github.com/meistro/kae/internal/lens"
@@ -16,7 +17,6 @@ import (
 	"github.com/meistro/kae/internal/lens/web"
 	"github.com/meistro/kae/internal/llm"
 	qdrantclient "github.com/meistro/kae/internal/qdrantclient"
-	"github.com/meistro/kae/collections"
 	"github.com/qdrant/go-client/qdrant"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -25,7 +25,7 @@ import (
 func main() {
 	// ── Flags ──
 	configPath := flag.String("config", "config/lens.yaml", "path to lens config file")
-	noTUI      := flag.Bool("no-tui", false, "disable TUI, log to stdout only")
+	noTUI := flag.Bool("no-tui", false, "disable TUI, log to stdout only")
 	flag.Parse()
 
 	// ── Logging setup ──
@@ -85,13 +85,13 @@ func main() {
 		}
 	}
 	ensureIndex(cfg.Qdrant.KnowledgeCollection, "lens_processed", qdrant.FieldType_FieldTypeBool)
-	ensureIndex(cfg.Qdrant.KnowledgeCollection, "domain",         qdrant.FieldType_FieldTypeKeyword)
-	ensureIndex(cfg.Qdrant.KnowledgeCollection, "ingested_at",    qdrant.FieldType_FieldTypeInteger)
-	ensureIndex(cfg.Qdrant.FindingsCollection,  "type",           qdrant.FieldType_FieldTypeKeyword)
-	ensureIndex(cfg.Qdrant.FindingsCollection,  "confidence",     qdrant.FieldType_FieldTypeFloat)
-	ensureIndex(cfg.Qdrant.FindingsCollection,  "created_at",     qdrant.FieldType_FieldTypeInteger)
-	ensureIndex(cfg.Qdrant.FindingsCollection,  "reviewed",       qdrant.FieldType_FieldTypeBool)
-	ensureIndex(cfg.Qdrant.FindingsCollection,  "batch_id",       qdrant.FieldType_FieldTypeKeyword)
+	ensureIndex(cfg.Qdrant.KnowledgeCollection, "domain", qdrant.FieldType_FieldTypeKeyword)
+	ensureIndex(cfg.Qdrant.KnowledgeCollection, "ingested_at", qdrant.FieldType_FieldTypeInteger)
+	ensureIndex(cfg.Qdrant.FindingsCollection, "type", qdrant.FieldType_FieldTypeKeyword)
+	ensureIndex(cfg.Qdrant.FindingsCollection, "confidence", qdrant.FieldType_FieldTypeFloat)
+	ensureIndex(cfg.Qdrant.FindingsCollection, "created_at", qdrant.FieldType_FieldTypeInteger)
+	ensureIndex(cfg.Qdrant.FindingsCollection, "reviewed", qdrant.FieldType_FieldTypeBool)
+	ensureIndex(cfg.Qdrant.FindingsCollection, "batch_id", qdrant.FieldType_FieldTypeKeyword)
 
 	// ── LLM client ──
 	llmClient := llm.New(llm.Config{
@@ -109,14 +109,14 @@ func main() {
 	events := make(chan any, 128)
 
 	// ── Build Lens pipeline ──
-	density     := lens.NewDensityCalculator(cfg, qc)
+	density := lens.NewDensityCalculator(cfg, qc)
 	synthesizer := lens.NewSynthesizer(llmClient, cfg)
-	writer      := lens.NewWriter(qc, llmClient, cfg.Qdrant.FindingsCollection)
-	reasoner    := lens.NewReasoner(qc, density, synthesizer, writer, events, cfg.Qdrant.KnowledgeCollection)
-	watcher     := lens.NewWatcher(cfg, qc, reasoner, events)
+	writer := lens.NewWriter(qc, llmClient, cfg.Qdrant.FindingsCollection)
+	reasoner := lens.NewReasoner(qc, density, synthesizer, writer, events, cfg.Qdrant.KnowledgeCollection)
+	watcher := lens.NewWatcher(cfg, qc, reasoner, events)
 
 	// ── Web dashboard ──
-	broker    := web.NewBroker()
+	broker := web.NewBroker()
 	webServer := web.NewServer(cfg, broker, qc)
 
 	// ── TUI model ──

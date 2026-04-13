@@ -14,10 +14,10 @@ import (
 // Watcher polls kae_knowledge for unprocessed points and dispatches them
 // to the Reasoner in batches. It is the entry point of the Lens pipeline.
 type Watcher struct {
-	cfg       *config.LensConfig
-	qc        *qdrantclient.Client
-	reasoner  *Reasoner
-	events    chan<- any // outbound event channel (findings, stats, batch events)
+	cfg      *config.LensConfig
+	qc       *qdrantclient.Client
+	reasoner *Reasoner
+	events   chan<- any // outbound event channel (findings, stats, batch events)
 
 	activeBatches int
 	mu            sync.Mutex

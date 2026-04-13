@@ -4,19 +4,19 @@ import "time"
 
 // Node represents a knowledge point in the reasoning graph.
 type Node struct {
-	ID        string
-	Title     string
-	Domain    string
-	Summary   string
-	Score     float32 // similarity score relative to anchor (0 for anchor itself)
-	IsAnchor  bool
+	ID       string
+	Title    string
+	Domain   string
+	Summary  string
+	Score    float32 // similarity score relative to anchor (0 for anchor itself)
+	IsAnchor bool
 }
 
 // Edge represents a discovered relationship between two nodes.
 type Edge struct {
 	FromID     string
 	ToID       string
-	Type       string  // "connection", "contradiction", "cluster", "anomaly"
+	Type       string // "connection", "contradiction", "cluster", "anomaly"
 	Confidence float64
 	Label      string
 }

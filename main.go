@@ -124,7 +124,7 @@ func main() {
 
 	// ── Normal archaeology run ─────────────────────────────────────────────────
 	eng := agent.NewEngine(cfg)
-	
+
 	if *headless {
 		// Headless mode: run engine without TUI
 		runHeadless(eng, cfg)
@@ -183,54 +183,54 @@ func runMetaAnalysis(cfg *config.Config) {
 func runHeadless(eng *agent.Engine, cfg *config.Config) {
 	// Start the engine
 	eng.Start()
-	
+
 	// Listen to events and print progress
 	events := eng.Events()
-	
+
 	fmt.Fprintf(os.Stderr, "KAE headless run started (max cycles: %d)\n", cfg.MaxCycles)
 	if cfg.Seed != "" {
 		fmt.Fprintf(os.Stderr, "Seed: %s\n", cfg.Seed)
 	}
-	
+
 	for ev := range events {
 		if ev.Err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", ev.Err)
 			continue
 		}
-		
+
 		// Print phase changes
 		if ev.Phase != "" {
 			fmt.Fprintf(os.Stderr, "[%s] %s\n", ev.Phase, ev.Focus)
 		}
-		
+
 		// Print thinking output as it arrives
 		if ev.ThinkChunk != "" {
 			fmt.Fprint(os.Stderr, ev.ThinkChunk)
 		}
-		
+
 		// Print regular output
 		if ev.OutputChunk != "" {
 			fmt.Fprint(os.Stderr, ev.OutputChunk)
 		}
-		
+
 		// Print report updates
 		if ev.ReportLine != "" {
 			fmt.Fprintln(os.Stderr, ev.ReportLine)
 		}
-		
+
 		// Check if graph is stable (end condition)
 		if ev.Phase == agent.PhaseStable {
 			fmt.Fprintln(os.Stderr, "Graph stabilized — run complete")
 			break
 		}
-		
+
 		// Check max cycles
 		if cfg.MaxCycles > 0 && ev.GraphSnap.Cycles >= cfg.MaxCycles {
 			fmt.Fprintf(os.Stderr, "Reached max cycles (%d) — run complete\n", cfg.MaxCycles)
 			break
 		}
 	}
-	
+
 	// Give engine a moment to finish
 	time.Sleep(100 * time.Millisecond)
 	fmt.Fprintln(os.Stderr, "Headless run finished")
