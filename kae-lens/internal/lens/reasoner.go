@@ -264,7 +264,7 @@ func toNeighborSummaries(points []*qdrant.ScoredPoint) []neighborSummary {
 			content = content[:400] + "..."
 		}
 		summaries = append(summaries, neighborSummary{
-			ID:      p.Id.GetUuid(),
+			ID:      qdrantclient.PointIDStr(p.Id),
 			Score:   p.Score,
 			Title:   stringFromMap(payload, "title", "source"),
 			Domain:  stringFromMap(payload, "domain", "topic"),

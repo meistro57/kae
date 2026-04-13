@@ -11,8 +11,12 @@ report*.html
 kae
 kae-headless-test
 kae-analyzer/kae-analyzer
-mcp/kae-mcp
+mcp/kae_mcp
+kae-lens/lens
 kae-lens/bin/
+
+# Logs
+kae-lens/lens.log
 
 think_*.log
 qdrant_storage/

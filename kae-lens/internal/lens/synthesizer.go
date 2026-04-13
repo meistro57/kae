@@ -61,7 +61,7 @@ func (s *Synthesizer) Synthesize(
 	for _, n := range neighbors {
 		payload := qdrantclient.PayloadToMap(n.Payload)
 		ns := neighborSummary{
-			ID:     n.Id.GetUuid(),
+			ID:     qdrantclient.PointIDStr(n.Id),
 			Score:  n.Score,
 			Title:  stringField(payload, "title"),
 			Domain: stringField(payload, "domain"),

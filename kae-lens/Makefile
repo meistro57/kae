@@ -1,4 +1,4 @@
-.PHONY: all build lens kae run-lens run-kae deps tidy clean fmt vet test healthcheck component-test
+.PHONY: all build lens kae mcp analyzer run-lens run-kae deps tidy clean fmt vet test healthcheck component-test
 
 # ── Config ──
 BINARY_KAE  = ../kae
@@ -9,7 +9,7 @@ CONFIG_KAE  = config/kae.yaml
 # ── Build ──
 all: build
 
-build: kae lens
+build: kae lens mcp analyzer
 
 kae:
 	@echo "→ building KAE..."
@@ -18,6 +18,14 @@ kae:
 lens:
 	@echo "→ building KAE Lens..."
 	go build -o lens ./cmd/lens
+
+mcp:
+	@echo "→ building KAE MCP server..."
+	@cd ../mcp && go build -o kae_mcp .
+
+analyzer:
+	@echo "→ building KAE Analyzer..."
+	@cd ../kae-analyzer && go build -o kae-analyzer .
 
 # ── Run ──
 run-lens:
@@ -77,6 +85,8 @@ component-test:
 clean:
 	rm -f lens
 	@cd .. && rm -f kae
+	@cd ../mcp && rm -f kae_mcp
+	@cd ../kae-analyzer && rm -f kae-analyzer
 
 # ── Help ──
 help:
