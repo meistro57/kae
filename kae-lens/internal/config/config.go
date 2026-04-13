@@ -28,10 +28,10 @@ type QdrantConfig struct {
 }
 
 type WatcherConfig struct {
-	PollIntervalSeconds       int `yaml:"poll_interval_seconds"`
-	BatchSize                 int `yaml:"batch_size"`
-	MaxConcurrentBatches      int `yaml:"max_concurrent_batches"`
-	IdlePollsBeforeReprocess  int `yaml:"idle_polls_before_reprocess"`
+	PollIntervalSeconds      int `yaml:"poll_interval_seconds"`
+	BatchSize                int `yaml:"batch_size"`
+	MaxConcurrentBatches     int `yaml:"max_concurrent_batches"`
+	IdlePollsBeforeReprocess int `yaml:"idle_polls_before_reprocess"`
 }
 
 type DensityThresholds struct {

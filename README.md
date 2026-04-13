@@ -158,6 +158,11 @@ go run . --domain-analysis
 # Tier 2: skip updating the meta-graph for this run
 go run . --no-meta-graph --seed "quick test"
 
+# Tier 2: citation crawl — automatically fires when a high-anomaly concept is detected
+# Fetches suppressed lineages from Semantic Scholar and expands their citation chains
+go run . --citation-threshold 0.6   # only crawl when anomaly score >= 0.6 (default 0.5)
+go run . --no-cite-crawl            # disable citation crawl entirely
+
 # Limit cycles
 go run . --cycles 50
 
@@ -390,6 +395,9 @@ Phase 4  ENSEMBLE       N models reason in parallel; controversy score computed
 Phase 5  CONNECT        Extracts connections, adds nodes/edges to knowledge graph
 Phase 6  SCORE          Contradiction scoring per topic
 Phase 7  ANOMALY        Scans for where consensus goes silent or contradicts itself
+         └──────────────► If anomaly score ≥ threshold: background CITATION CRAWL
+                          (Semantic Scholar suppressed lineages + citation chain BFS)
+                          Results queued and picked up by next cycle's INGEST phase
 Phase 8  REPORT         Updates the live markdown + HTML report
          └──────────────► Novelty check → LOOP or STOP
 ```
@@ -497,7 +505,7 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 
 ### Tier 2 — Knowledge Graph Intelligence (complete)
 - [x] **Persistent meta-graph** (`kae_meta_graph`) — cross-run concept aggregation with attractor detection
-- [x] **Citation chain excavation** — BFS over Semantic Scholar citation graph; suppressed lineage detection
+- [x] **Citation chain excavation** — BFS over Semantic Scholar citation graph; suppressed lineage detection; wired into score phase — automatically fires on high-anomaly concepts and queues results for the next ingest cycle
 - [x] **Domain boundary detection** — bridge concepts (cross-domain connectors) and moats (isolated domain pairs)
 
 ### Tier 3+ — Coming Next
@@ -522,4 +530,4 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 
 ---
 
-*KAE v0.5 — Built in WSL2 | Go | OpenRouter · Anthropic · OpenAI · Gemini · Ollama | Qdrant v1.17.1 | Pure curiosity*
+*KAE v1.0 — Built in WSL2 | Go | OpenRouter · Anthropic · OpenAI · Gemini · Ollama | Qdrant v1.17.1 | Pure curiosity*

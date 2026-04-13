@@ -526,7 +526,7 @@ func toolMetaAttractors(minRuns int) (string, error) {
 	points, _ := result["points"].([]any)
 
 	type attractor struct {
-		Concept    string
+		Concept     string
 		Occurrences int
 		TotalWeight float64
 		AvgAnomaly  float64

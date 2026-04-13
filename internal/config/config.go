@@ -44,6 +44,10 @@ type Config struct {
 	// Meta-analysis (Tier 1.3)
 	RunAnalysis     bool
 	MinAnalysisRuns int
+
+	// Citation crawl (Tier 2 — wired into score phase)
+	CiteCrawlEnabled         bool    // trigger citation crawl on anomaly detection
+	CitationAnomalyThreshold float64 // min anomaly score to trigger crawl (0–1)
 }
 
 func Load() (*Config, error) {
@@ -71,6 +75,9 @@ func Load() (*Config, error) {
 		MaxBranches:      4,
 		// Meta-analysis defaults
 		MinAnalysisRuns: 2,
+		// Citation crawl defaults — on by default, fires at 0.5 anomaly score
+		CiteCrawlEnabled:         true,
+		CitationAnomalyThreshold: 0.5,
 	}, nil
 }
 

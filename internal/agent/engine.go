@@ -33,6 +33,7 @@ const (
 	PhaseReport   Phase = "UPDATING REPORT"
 	PhaseStable   Phase = "GRAPH STABLE"
 	PhaseEnsemble Phase = "ENSEMBLE REASONING"
+	PhaseCitation Phase = "CITATION CRAWL"
 )
 
 type Event struct {
@@ -58,16 +59,17 @@ type Snapshot struct {
 }
 
 type Engine struct {
-	cfg      *config.Config
-	graph    *graph.Graph
-	brain    llm.Provider
-	fast     llm.Provider
-	ens      *ensemble.Ensemble // nil when ensemble mode is off
-	ctrl     *runcontrol.RunController
-	qdrant   *store.Client
-	embedder *embeddings.Embedder
-	events   chan Event
-	runID    string
+	cfg           *config.Config
+	graph         *graph.Graph
+	brain         llm.Provider
+	fast          llm.Provider
+	ens           *ensemble.Ensemble // nil when ensemble mode is off
+	ctrl          *runcontrol.RunController
+	qdrant        *store.Client
+	embedder      *embeddings.Embedder
+	events        chan Event
+	runID         string
+	citationQueue chan []ingestion.SourceChunk // async citation-crawl results
 
 	mu                  sync.Mutex
 	cycle               int
@@ -125,16 +127,17 @@ func NewEngine(cfg *config.Config) *Engine {
 	)
 
 	return &Engine{
-		cfg:      cfg,
-		graph:    graph.New(),
-		brain:    brain,
-		fast:     fast,
-		ens:      ens,
-		ctrl:     ctrl,
-		qdrant:   store.NewClient(cfg.QdrantURL),
-		embedder: embeddings.NewEmbedder(cfg.OpenRouterKey),
-		events:   make(chan Event, 256),
-		runID:    runID,
+		cfg:           cfg,
+		graph:         graph.New(),
+		brain:         brain,
+		fast:          fast,
+		ens:           ens,
+		ctrl:          ctrl,
+		qdrant:        store.NewClient(cfg.QdrantURL),
+		embedder:      embeddings.NewEmbedder(cfg.OpenRouterKey),
+		events:        make(chan Event, 256),
+		runID:         runID,
+		citationQueue: make(chan []ingestion.SourceChunk, 32),
 	}
 }
 
@@ -238,6 +241,23 @@ func (e *Engine) ingestPhase(topic string) []ingestion.SourceChunk {
 	e.emit(Event{Phase: PhaseIngest, Focus: topic})
 
 	var allChunks []ingestion.SourceChunk
+
+	// Drain any pending citation-crawl results from previous cycles.
+	drained := 0
+	for {
+		select {
+		case batch := <-e.citationQueue:
+			allChunks = append(allChunks, batch...)
+			drained += len(batch)
+		default:
+			goto doneDrain
+		}
+	}
+doneDrain:
+	if drained > 0 {
+		e.emit(Event{Phase: PhaseIngest,
+			OutputChunk: fmt.Sprintf("✓ Citation cache: %d chunks from prior anomaly crawls", drained)})
+	}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
@@ -667,6 +687,12 @@ func (e *Engine) scorePhase(topic string, candidates []*store.Chunk) {
 
 	e.emit(Event{Phase: PhaseScore,
 		OutputChunk: fmt.Sprintf("Score for %q: %s", topic, score.Explanation)})
+
+	// When a high-anomaly concept is detected, kick off a background citation
+	// crawl so the next ingest cycle picks up related suppressed lineages.
+	if score.IsAnomaly && score.AnomalyScore >= e.cfg.CitationAnomalyThreshold && e.cfg.CiteCrawlEnabled {
+		go e.crawlCitations(topic)
+	}
 }
 
 func (e *Engine) anomalyPhase() {
@@ -716,6 +742,71 @@ func (e *Engine) reportPhase() {
 	e.mu.Unlock()
 
 	e.emit(Event{Phase: PhaseReport, ReportLine: sb.String()})
+}
+
+// crawlCitations runs in the background when a high-anomaly concept is detected.
+// It fetches suppressed lineages from Semantic Scholar and expands their
+// citation chains, pushing the results into citationQueue for the next cycle.
+func (e *Engine) crawlCitations(topic string) {
+	e.emit(Event{Phase: PhaseCitation, Focus: topic,
+		OutputChunk: fmt.Sprintf("Citation crawl started for anomaly: %q", topic)})
+
+	crawler := ingestion.NewCitationCrawler()
+
+	// 1. Find papers about this topic with few citations (suppressed lineages)
+	lineages, err := crawler.FindSuppressedLineages(topic, 5, 3)
+	if err != nil {
+		e.emit(Event{Phase: PhaseCitation,
+			OutputChunk: fmt.Sprintf("Citation crawl error for %q: %v", topic, err)})
+		return
+	}
+
+	var chunks []ingestion.SourceChunk
+
+	for _, l := range lineages {
+		// Convert the paper itself to chunks
+		for _, text := range ingestion.SemanticPaperToChunks(l.Paper) {
+			chunks = append(chunks, ingestion.SourceChunk{
+				Text:   text,
+				Source: l.Paper.URL,
+				Topic:  topic,
+			})
+		}
+
+		// Expand citation chain from this paper
+		if l.Paper.ID == "" {
+			continue
+		}
+		related, err := crawler.ExpandFromPaper(l.Paper.ID)
+		if err != nil {
+			continue
+		}
+		for _, p := range related {
+			for _, text := range ingestion.SemanticPaperToChunks(p) {
+				chunks = append(chunks, ingestion.SourceChunk{
+					Text:   text,
+					Source: p.URL,
+					Topic:  topic,
+				})
+			}
+		}
+	}
+
+	if len(chunks) == 0 {
+		e.emit(Event{Phase: PhaseCitation,
+			OutputChunk: fmt.Sprintf("Citation crawl: no suppressed lineages found for %q", topic)})
+		return
+	}
+
+	// Non-blocking send — drop if the queue is full rather than stall
+	select {
+	case e.citationQueue <- chunks:
+		e.emit(Event{Phase: PhaseCitation,
+			OutputChunk: fmt.Sprintf("✓ Citation crawl: queued %d chunks for %q", len(chunks), topic)})
+	default:
+		e.emit(Event{Phase: PhaseCitation,
+			OutputChunk: "Citation queue full — skipping batch"})
+	}
 }
 
 // ── Seed selection ────────────────────────────────────────────────────────────

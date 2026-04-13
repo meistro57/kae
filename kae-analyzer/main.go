@@ -460,7 +460,8 @@ func statsCmd() *cobra.Command {
 				}
 			}
 
-			fmt.Println("=== KAE Global Statistics ===\n")
+			fmt.Println("=== KAE Global Statistics ===")
+			fmt.Println()
 			fmt.Printf("Total Runs:       %d\n", len(runs))
 			fmt.Printf("Total Concepts:   %d\n", totalNodes)
 			fmt.Printf("Total Anomalies:  %d (%.1f%%)\n",

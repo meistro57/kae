@@ -29,8 +29,36 @@ jobs:
             exit 1
           fi
 
-      - name: Vet
+      # Root module
+      - name: Vet (root)
         run: go vet ./...
 
-      - name: Test
+      - name: Test (root)
         run: go test ./...
+
+      # kae-lens module
+      - name: Vet (kae-lens)
+        working-directory: kae-lens
+        run: go vet ./...
+
+      - name: Test (kae-lens)
+        working-directory: kae-lens
+        run: go test ./...
+
+      # mcp module
+      - name: Vet (mcp)
+        working-directory: mcp
+        run: go vet ./...
+
+      - name: Build (mcp)
+        working-directory: mcp
+        run: go build ./...
+
+      # kae-analyzer module
+      - name: Vet (kae-analyzer)
+        working-directory: kae-analyzer
+        run: go vet ./...
+
+      - name: Build (kae-analyzer)
+        working-directory: kae-analyzer
+        run: go build ./...

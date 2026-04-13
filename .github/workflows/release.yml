@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: ""
+          - goos: linux
+            goarch: arm64
+            suffix: ""
+          - goos: darwin
+            goarch: amd64
+            suffix: ""
+          - goos: darwin
+            goarch: arm64
+            suffix: ""
+          - goos: windows
+            goarch: amd64
+            suffix: ".exe"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build binaries
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          PLATFORM="${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p dist/$PLATFORM
+
+          # kae (root)
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o dist/$PLATFORM/kae${{ matrix.suffix }} .
+
+          # lens
+          cd kae-lens
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o ../dist/$PLATFORM/lens${{ matrix.suffix }} ./cmd/lens
+          cd ..
+
+          # kae_mcp
+          cd mcp
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o ../dist/$PLATFORM/kae_mcp${{ matrix.suffix }} .
+          cd ..
+
+          # kae-analyzer
+          cd kae-analyzer
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o ../dist/$PLATFORM/kae-analyzer${{ matrix.suffix }} .
+          cd ..
+
+      - name: Create archive
+        run: |
+          PLATFORM="${{ matrix.goos }}-${{ matrix.goarch }}"
+          TAG="${{ github.ref_name }}"
+          ARCHIVE="kae-${TAG}-${PLATFORM}"
+
+          cd dist
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip -r "../${ARCHIVE}.zip" $PLATFORM/
+            echo "ASSET=${ARCHIVE}.zip" >> $GITHUB_ENV
+          else
+            tar czf "../${ARCHIVE}.tar.gz" $PLATFORM/
+            echo "ASSET=${ARCHIVE}.tar.gz" >> $GITHUB_ENV
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kae-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.ASSET }}
+          retention-days: 1
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

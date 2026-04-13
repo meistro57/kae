@@ -68,6 +68,12 @@ func main() {
 	minRuns := flag.Int("min-runs", 2,
 		"Minimum distinct runs for a cluster to appear in meta-analysis")
 
+	// ── Citation crawl flags (Tier 2) ─────────────────────────────────────────
+	noCiteCrawl := flag.Bool("no-cite-crawl", false,
+		"Disable automatic citation crawl when anomalies are detected")
+	citationThreshold := flag.Float64("citation-threshold", 0.5,
+		"Minimum anomaly score (0–1) to trigger a background citation crawl")
+
 	// ── Tier 2 flags ───────────────────────────────────────────────────────────
 	showAttractors := flag.Bool("attractors", false,
 		"Print attractor report from persistent meta-graph and exit")
@@ -121,6 +127,11 @@ func main() {
 
 	cfg.RunAnalysis = *analyze
 	cfg.MinAnalysisRuns = *minRuns
+
+	if *noCiteCrawl {
+		cfg.CiteCrawlEnabled = false
+	}
+	cfg.CitationAnomalyThreshold = *citationThreshold
 
 	// ── Meta-analysis mode ─────────────────────────────────────────────────────
 	if cfg.RunAnalysis {

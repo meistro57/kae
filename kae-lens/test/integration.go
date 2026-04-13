@@ -25,7 +25,7 @@ func main() {
 
 	// 1. Load config
 	fmt.Println("📋 Loading configuration...")
-	cfg, err := config.LoadLensConfig("../config/lens.yaml")
+	cfg, err := config.Load("../config/lens.yaml")
 	if err != nil {
 		log.Fatalf("❌ Failed to load config: %v", err)
 	}
@@ -69,7 +69,7 @@ func main() {
 
 	// 3. Test density calculator
 	fmt.Println("📐 Testing density calculator...")
-	dc := lens.NewDensityCalculator(cfg, qc)
+	_ = lens.NewDensityCalculator(cfg, qc)
 
 	// Test classify using exported method from density.go
 	testCases := []struct {
@@ -107,14 +107,14 @@ func main() {
 	if openrouterKey == "" {
 		fmt.Println("⚠️  OPENROUTER_API_KEY not set - skipping LLM test")
 	} else {
-		llmClient := llm.NewClient(
-			cfg.LLM.OpenRouterBaseURL,
-			openrouterKey,
-			openaiKey,
-			cfg.LLM.ReasoningModel,
-			cfg.LLM.FastModel,
-			cfg.Embedding.Model,
-		)
+		llmClient := llm.New(llm.Config{
+			OpenRouterBaseURL: cfg.LLM.OpenRouterBaseURL,
+			OpenRouterAPIKey:  openrouterKey,
+			OpenAIAPIKey:      openaiKey,
+			ReasoningModel:    cfg.LLM.ReasoningModel,
+			FastModel:         cfg.LLM.FastModel,
+			EmbeddingModel:    cfg.Embedding.Model,
+		})
 
 		// Test fast chat (cheap test)
 		fmt.Println("   Testing fast chat...")
