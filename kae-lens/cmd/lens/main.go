@@ -111,7 +111,7 @@ func main() {
 	// ── Build Lens pipeline ──
 	density := lens.NewDensityCalculator(cfg, qc)
 	synthesizer := lens.NewSynthesizer(llmClient, cfg)
-	writer := lens.NewWriter(qc, llmClient, cfg.Qdrant.FindingsCollection)
+	writer := lens.NewWriter(qc, llmClient, cfg.Qdrant.FindingsCollection, cfg.Qdrant.KnowledgeCollection)
 	reasoner := lens.NewReasoner(qc, density, synthesizer, writer, events, cfg.Qdrant.KnowledgeCollection)
 	watcher := lens.NewWatcher(cfg, qc, reasoner, events)
 

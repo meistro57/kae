@@ -141,6 +141,13 @@ func (r *Reasoner) processPoint(ctx context.Context, batchID string, anchor *anc
 		return nil, fmt.Errorf("writing findings: %w", err)
 	}
 
+	// 4b. Write correction chunks back into kae_chunks so future KAE cycles
+	// reason over the corrected understanding, not just the flawed original.
+	if err := r.writer.WriteCorrectionChunks(ctx, findings); err != nil {
+		log.Printf("[reasoner] correction chunk write error: %v", err)
+		// Non-fatal — findings are already stored; corrections are best-effort
+	}
+
 	// 5. Emit finding events to dashboard
 	for _, f := range findings {
 		r.emit(graph.FindingEvent{
