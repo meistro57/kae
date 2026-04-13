@@ -9,6 +9,7 @@ watcher:
   poll_interval_seconds: 60   # was 30 — gives synthesizer breathing room before next wave
   batch_size: 10
   max_concurrent_batches: 3   # was 2 — one extra slot reduces skipped polls
+  idle_polls_before_reprocess: 3  # after 3 empty polls (~3 min), clear processed flags and restart
 
 density:
   thresholds:

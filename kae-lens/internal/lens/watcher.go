@@ -22,6 +22,7 @@ type Watcher struct {
 	events   chan<- any // outbound event channel (findings, stats, batch events)
 
 	activeBatches int
+	idlePolls     int // consecutive polls that found 0 unprocessed points
 	mu            sync.Mutex
 }
 
@@ -87,8 +88,30 @@ func (w *Watcher) poll(ctx context.Context) {
 		return
 	}
 	if len(points) == 0 {
+		w.mu.Lock()
+		w.idlePolls++
+		idle := w.idlePolls
+		w.mu.Unlock()
+
+		threshold := w.cfg.Watcher.IdlePollsBeforeReprocess
+		log.Printf("[watcher] queue empty (idle poll %d/%d)", idle, threshold)
+
+		if idle >= threshold {
+			log.Printf("[watcher] idle threshold reached — clearing processed flags and restarting cycle")
+			if err := w.qc.ClearProcessedFlags(ctx, w.cfg.Qdrant.KnowledgeCollection); err != nil {
+				log.Printf("[watcher] failed to clear processed flags: %v", err)
+			} else {
+				w.mu.Lock()
+				w.idlePolls = 0
+				w.mu.Unlock()
+			}
+		}
 		return
 	}
+
+	w.mu.Lock()
+	w.idlePolls = 0
+	w.mu.Unlock()
 
 	log.Printf("[watcher] found %d unprocessed points — dispatching batch", len(points))
 

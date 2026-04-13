@@ -28,9 +28,10 @@ type QdrantConfig struct {
 }
 
 type WatcherConfig struct {
-	PollIntervalSeconds  int `yaml:"poll_interval_seconds"`
-	BatchSize            int `yaml:"batch_size"`
-	MaxConcurrentBatches int `yaml:"max_concurrent_batches"`
+	PollIntervalSeconds       int `yaml:"poll_interval_seconds"`
+	BatchSize                 int `yaml:"batch_size"`
+	MaxConcurrentBatches      int `yaml:"max_concurrent_batches"`
+	IdlePollsBeforeReprocess  int `yaml:"idle_polls_before_reprocess"`
 }
 
 type DensityThresholds struct {
@@ -148,6 +149,9 @@ func (c *LensConfig) validate() error {
 	}
 	if c.Watcher.BatchSize <= 0 {
 		return fmt.Errorf("watcher.batch_size must be > 0")
+	}
+	if c.Watcher.IdlePollsBeforeReprocess <= 0 {
+		c.Watcher.IdlePollsBeforeReprocess = 3 // default: reprocess after 3 idle polls
 	}
 	if c.LLM.MinConfidence <= 0 || c.LLM.MinConfidence > 1 {
 		return fmt.Errorf("llm.min_confidence must be between 0 and 1")

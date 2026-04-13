@@ -107,7 +107,7 @@ func (r *Reasoner) processPoint(ctx context.Context, batchID string, anchor *anc
 	// Filter out the anchor itself from neighbors
 	filtered := make([]*qdrant.ScoredPoint, 0, len(neighbors))
 	for _, n := range neighbors {
-		if n.Id.GetUuid() != anchor.id {
+		if qdrantclient.PointIDStr(n.Id) != anchor.id {
 			filtered = append(filtered, n)
 		}
 	}
