@@ -12,6 +12,7 @@ kae
 kae-headless-test
 kae-analyzer/kae-analyzer
 mcp/kae_mcp
+mcp/kae-mcp
 kae-lens/lens
 kae-lens/bin/
 
