@@ -108,6 +108,14 @@ For `anomaly` and `contradiction` findings, Lens runs a focused second LLM pass 
 
 The correction is stored in the `correction` field on the finding (Qdrant payload + event) and shown in the TUI trace panel when you expand a finding with `enter`.
 
+### Source Paper Links
+
+Every finding carries a `source_urls` map (`point_id → URL`) built from the HTTP(S) source URLs of the anchor and neighbor chunks that were in scope when the finding was made. This covers all the major ingestion backends (Semantic Scholar, OpenAlex, Wikipedia, CORE, arXiv, PubMed). Sources that only have a title (e.g. Google Books) are omitted.
+
+- **TUI** — expand a finding with `enter`; a **SOURCES** section lists each ID with its URL below the correction block
+- **Web dashboard** — clicking a finding opens the detail panel; source URLs render as clickable `<a>` links
+- **HTML reports** — any HTTP(S) URL in a paragraph or list item is automatically wrapped in an `<a>` tag
+
 ### Adaptive Density
 
 The search width and score threshold adapt to local point density:
@@ -170,6 +178,10 @@ kae-lens/
   "type": "anomaly",
   "confidence": 0.82,
   "source_point_ids": ["270359567535248", "271459079163459"],
+  "source_urls": {
+    "270359567535248": "https://api.semanticscholar.org/graph/v1/paper/abc123",
+    "271459079163459": "https://en.wikipedia.org/wiki/Observer_effect"
+  },
   "domains": ["physics", "philosophy"],
   "summary": "Mainstream physics literature systematically avoids...",
   "reasoning_trace": "Step 1: anchor is observer effect...",
@@ -178,6 +190,7 @@ kae-lens/
   "created_at": 1712345900
 }
 ```
+> `source_urls` maps each source point ID to its paper or page URL. Only HTTP(S) URLs are included — title-only sources (e.g. Google Books) are omitted. Serialised as a JSON string in the Qdrant payload under the `source_urls` key.
 
 ---
 

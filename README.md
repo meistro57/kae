@@ -256,6 +256,8 @@ make run-lens
 
 When a correction is produced it is stored on the finding and shown in the TUI trace panel (`enter` to expand).
 
+Every finding also carries a **source URL map** (`point_id → URL`) built from the HTTP(S) source URLs of the chunks that were in scope. Source links appear in the TUI SOURCES block, as clickable links in the web dashboard, and URLs in HTML reports are auto-linkified.
+
 ### Adaptive Density
 
 Lens adjusts its search width to local vector density so sparse regions get wide nets and dense regions get tight focused ones:
@@ -502,6 +504,7 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 - [x] **KAE Lens** — autonomous post-processing layer; adaptive density reasoning; TUI + web dashboard
 - [x] **Lens anomaly correction** — data-grounded second LLM pass resolves anomaly/contradiction findings against source evidence
 - [x] **Lens performance tuning** — per-call LLM timeout, relaxed density thresholds, paced batch polling
+- [x] **Source paper links** — findings carry a `source_urls` map; TUI, web dashboard, and HTML reports all surface clickable links to the originating papers
 
 ### Tier 2 — Knowledge Graph Intelligence (complete)
 - [x] **Persistent meta-graph** (`kae_meta_graph`) — cross-run concept aggregation with attractor detection

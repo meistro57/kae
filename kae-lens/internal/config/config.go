@@ -1,9 +1,12 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -88,11 +91,51 @@ type TUIConfig struct {
 	MaxFeedItems int  `yaml:"max_feed_items"`
 }
 
+// loadDotEnv walks up from dir looking for a .env file and sets any variables
+// not already present in the environment. Existing env vars always win.
+func loadDotEnv(dir string) {
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	for {
+		candidate := filepath.Join(dir, ".env")
+		f, err := os.Open(candidate)
+		if err == nil {
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				k, v, ok := strings.Cut(line, "=")
+				if !ok {
+					continue
+				}
+				k = strings.TrimSpace(k)
+				v = strings.Trim(strings.TrimSpace(v), `"'`)
+				if k != "" && os.Getenv(k) == "" {
+					os.Setenv(k, v)
+				}
+			}
+			f.Close()
+			return
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return // reached filesystem root
+		}
+		dir = parent
+	}
+}
+
 // Load reads a lens config from the given YAML file path.
 // Environment variables override yaml values for sensitive fields:
 //
 //	LENS_QDRANT_API_KEY, LENS_OPENROUTER_API_KEY, LENS_OPENAI_API_KEY
 func Load(path string) (*LensConfig, error) {
+	// Load .env before reading env vars so secrets can live in the repo root.
+	loadDotEnv(filepath.Dir(filepath.Clean(path)))
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading config file: %w", err)

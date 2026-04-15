@@ -44,6 +44,7 @@ type neighborSummary struct {
 	Domain  string
 	Content string
 	Score   float32
+	URL     string // HTTP(S) source URL, empty if not available
 }
 
 // Synthesize runs LLM reasoning over an anchor + its neighbors.
@@ -56,7 +57,13 @@ func (s *Synthesizer) Synthesize(
 	profile *DensityProfile,
 ) ([]*collections.LensFinding, error) {
 
-	// Parse neighbors into summaries
+	// Parse neighbors into summaries and build a URL map for all points in scope.
+	// allURLs maps point ID → source URL (HTTP(S) only) for the anchor + all neighbors.
+	allURLs := make(map[string]string)
+	if strings.HasPrefix(anchor.url, "http://") || strings.HasPrefix(anchor.url, "https://") {
+		allURLs[anchor.id] = anchor.url
+	}
+
 	neighborSummaries := make([]neighborSummary, 0, len(neighbors))
 	for _, n := range neighbors {
 		payload := qdrantclient.PayloadToMap(n.Payload)
@@ -72,6 +79,17 @@ func (s *Synthesizer) Synthesize(
 			content = content[:400] + "..."
 		}
 		ns.Content = content
+
+		// Extract source URL (kae_knowledge has 'url'; kae_chunks stores URL in 'source')
+		srcURL := stringField(payload, "url")
+		if srcURL == "" {
+			srcURL = stringField(payload, "source")
+		}
+		if strings.HasPrefix(srcURL, "http://") || strings.HasPrefix(srcURL, "https://") {
+			ns.URL = srcURL
+			allURLs[ns.ID] = srcURL
+		}
+
 		neighborSummaries = append(neighborSummaries, ns)
 	}
 
@@ -139,10 +157,22 @@ func (s *Synthesizer) Synthesize(
 
 		embeddingText := fmt.Sprintf("[%s] %s", r.Type, r.Summary)
 
+		// Build the subset of URLs that are relevant to this finding's source IDs.
+		var sourceURLs map[string]string
+		for _, id := range sourceIDs {
+			if u, ok := allURLs[id]; ok {
+				if sourceURLs == nil {
+					sourceURLs = make(map[string]string)
+				}
+				sourceURLs[id] = u
+			}
+		}
+
 		findings = append(findings, &collections.LensFinding{
 			Type:           collections.FindingType(r.Type),
 			Confidence:     r.Confidence,
 			SourcePointIDs: sourceIDs,
+			SourceURLs:     sourceURLs,
 			Domains:        domains,
 			Summary:        r.Summary,
 			ReasoningTrace: r.ReasoningTrace,

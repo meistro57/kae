@@ -21,8 +21,11 @@ type LensFinding struct {
 	ReasoningTrace string      `json:"reasoning_trace"`
 	// Correction is a data-grounded resolution produced for anomaly and
 	// contradiction findings. Empty for connection and cluster types.
-	Correction    string `json:"correction,omitempty"`
-	EmbeddingText string `json:"embedding_text"`
+	Correction string `json:"correction,omitempty"`
+	// SourceURLs maps source point IDs to their paper/page URLs for display.
+	// Only populated for IDs whose source field is an HTTP(S) URL.
+	SourceURLs    map[string]string `json:"source_urls,omitempty"`
+	EmbeddingText string            `json:"embedding_text"`
 	CreatedAt     int64  `json:"created_at"`
 	Reviewed      bool   `json:"reviewed"`
 	BatchID       string `json:"batch_id"`

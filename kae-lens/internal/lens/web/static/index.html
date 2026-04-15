@@ -517,11 +517,29 @@
     document.getElementById('trace-summary').style.fontStyle = 'normal';
 
     const traceEl = document.getElementById('trace-content');
+    let html = '';
     if (f.reasoning_trace) {
-      traceEl.textContent = f.reasoning_trace;
+      html += `<div style="white-space:pre-wrap;line-height:1.5">${escapeHtml(f.reasoning_trace)}</div>`;
     } else {
-      traceEl.innerHTML = '<div class="trace-placeholder">(no reasoning trace)</div>';
+      html += '<div class="trace-placeholder">(no reasoning trace)</div>';
     }
+    if (f.correction) {
+      html += `<div style="margin-top:12px;padding:10px;background:#1a0a00;border-left:3px solid var(--warning)">
+        <div style="font-size:9px;letter-spacing:2px;color:var(--warning);margin-bottom:6px;font-family:'Space Mono',monospace">DATA CORRECTION</div>
+        <div style="white-space:pre-wrap;line-height:1.5">${escapeHtml(f.correction)}</div>
+      </div>`;
+    }
+    if (f.source_urls && Object.keys(f.source_urls).length > 0) {
+      const links = Object.entries(f.source_urls).map(([id, url]) => {
+        const short = id.length > 12 ? id.slice(0,12) + '…' : id;
+        return `<div style="margin:3px 0"><span style="color:var(--muted);font-size:10px">[${escapeHtml(short)}]</span> <a href="${encodeURI(url)}" target="_blank" rel="noopener" style="color:var(--primary)">${escapeHtml(url)}</a></div>`;
+      }).join('');
+      html += `<div style="margin-top:12px;padding:10px;background:var(--bg3);border-left:3px solid var(--primary)">
+        <div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:6px;font-family:'Space Mono',monospace">SOURCES</div>
+        ${links}
+      </div>`;
+    }
+    traceEl.innerHTML = html;
   }
 
   // ── Stats ──

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/meistro/kae/collections"
@@ -155,6 +156,7 @@ func (r *Reasoner) processPoint(ctx context.Context, batchID string, anchor *anc
 			Type:           string(f.Type),
 			Confidence:     f.Confidence,
 			SourceIDs:      f.SourcePointIDs,
+			SourceURLs:     f.SourceURLs,
 			Domains:        f.Domains,
 			Summary:        f.Summary,
 			ReasoningTrace: f.ReasoningTrace,
@@ -187,7 +189,11 @@ func parseAnchor(p *qdrant.RetrievedPoint) (*anchorPoint, error) {
 	title := stringFromMap(payload, "title", "source")
 	content := stringFromMap(payload, "content", "text")
 	domain := stringFromMap(payload, "domain", "topic")
-	url := stringFromMap(payload, "url")
+	rawURL := stringFromMap(payload, "url", "source")
+	url := ""
+	if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
+		url = rawURL
+	}
 
 	// Use a sensible fallback title so logs are readable
 	if title == "" {

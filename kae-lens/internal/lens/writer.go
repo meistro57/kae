@@ -2,6 +2,7 @@ package lens
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 
@@ -69,30 +70,37 @@ func (w *Writer) Write(ctx context.Context, findings []*collections.LensFinding)
 			domainValues[j] = qdrant.NewValueString(d)
 		}
 
+		payload := map[string]*qdrant.Value{
+			"type":            qdrant.NewValueString(string(f.Type)),
+			"confidence":      qdrant.NewValueDouble(f.Confidence),
+			"summary":         qdrant.NewValueString(f.Summary),
+			"reasoning_trace": qdrant.NewValueString(f.ReasoningTrace),
+			"correction":      qdrant.NewValueString(f.Correction),
+			"embedding_text":  qdrant.NewValueString(f.EmbeddingText),
+			"batch_id":        qdrant.NewValueString(f.BatchID),
+			"created_at":      qdrant.NewValueInt(f.CreatedAt),
+			"reviewed":        qdrant.NewValueBool(f.Reviewed),
+			"source_point_ids": {
+				Kind: &qdrant.Value_ListValue{
+					ListValue: &qdrant.ListValue{Values: sourceIDValues},
+				},
+			},
+			"domains": {
+				Kind: &qdrant.Value_ListValue{
+					ListValue: &qdrant.ListValue{Values: domainValues},
+				},
+			},
+		}
+		if len(f.SourceURLs) > 0 {
+			if urlsJSON, err := json.Marshal(f.SourceURLs); err == nil {
+				payload["source_urls"] = qdrant.NewValueString(string(urlsJSON))
+			}
+		}
+
 		points[i] = &qdrant.PointStruct{
 			Id:      qdrant.NewID(pointID),
 			Vectors: qdrant.NewVectors(vectors[i]...),
-			Payload: map[string]*qdrant.Value{
-				"type":            qdrant.NewValueString(string(f.Type)),
-				"confidence":      qdrant.NewValueDouble(f.Confidence),
-				"summary":         qdrant.NewValueString(f.Summary),
-				"reasoning_trace": qdrant.NewValueString(f.ReasoningTrace),
-				"correction":      qdrant.NewValueString(f.Correction),
-				"embedding_text":  qdrant.NewValueString(f.EmbeddingText),
-				"batch_id":        qdrant.NewValueString(f.BatchID),
-				"created_at":      qdrant.NewValueInt(f.CreatedAt),
-				"reviewed":        qdrant.NewValueBool(f.Reviewed),
-				"source_point_ids": {
-					Kind: &qdrant.Value_ListValue{
-						ListValue: &qdrant.ListValue{Values: sourceIDValues},
-					},
-				},
-				"domains": {
-					Kind: &qdrant.Value_ListValue{
-						ListValue: &qdrant.ListValue{Values: domainValues},
-					},
-				},
-			},
+			Payload: payload,
 		}
 	}
 

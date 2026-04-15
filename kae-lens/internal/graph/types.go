@@ -24,16 +24,17 @@ type Edge struct {
 // FindingEvent is the event emitted by Lens when a new finding is produced.
 // Flows from the reasoner → TUI channel and SSE broker simultaneously.
 type FindingEvent struct {
-	ID             string    `json:"id"`
-	Type           string    `json:"type"`
-	Confidence     float64   `json:"confidence"`
-	SourceIDs      []string  `json:"source_ids"`
-	Domains        []string  `json:"domains"`
-	Summary        string    `json:"summary"`
-	ReasoningTrace string    `json:"reasoning_trace"`
-	Correction     string    `json:"correction,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	BatchID        string    `json:"batch_id"`
+	ID             string            `json:"id"`
+	Type           string            `json:"type"`
+	Confidence     float64           `json:"confidence"`
+	SourceIDs      []string          `json:"source_ids"`
+	SourceURLs     map[string]string `json:"source_urls,omitempty"` // id → HTTP(S) URL
+	Domains        []string          `json:"domains"`
+	Summary        string            `json:"summary"`
+	ReasoningTrace string            `json:"reasoning_trace"`
+	Correction     string            `json:"correction,omitempty"`
+	CreatedAt      time.Time         `json:"created_at"`
+	BatchID        string            `json:"batch_id"`
 }
 
 // StatsEvent carries updated dashboard stats.

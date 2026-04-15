@@ -136,6 +136,22 @@ func sanitizeFocus(focus string) string {
 	return b.String()
 }
 
+// linkifyHTML escapes a plain text string for HTML and wraps any HTTP(S) URLs
+// in anchor tags so they become clickable links in the rendered report.
+func linkifyHTML(text string) string {
+	words := strings.Fields(text)
+	var parts []string
+	for _, w := range words {
+		if strings.HasPrefix(w, "http://") || strings.HasPrefix(w, "https://") {
+			escaped := html.EscapeString(w)
+			parts = append(parts, `<a href="`+escaped+`" target="_blank" rel="noopener">`+escaped+`</a>`)
+		} else {
+			parts = append(parts, html.EscapeString(w))
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 func markdownToHTML(markdown string) string {
 	lines := strings.Split(markdown, "\n")
 	var out strings.Builder
@@ -176,7 +192,6 @@ func markdownToHTML(markdown string) string {
 			continue
 		}
 
-		escaped := html.EscapeString(trim)
 		switch {
 		case strings.HasPrefix(trim, "### "):
 			closeList()
@@ -192,10 +207,10 @@ func markdownToHTML(markdown string) string {
 				out.WriteString("<ul>\n")
 				inList = true
 			}
-			out.WriteString("<li>" + html.EscapeString(strings.TrimSpace(trim[2:])) + "</li>\n")
+			out.WriteString("<li>" + linkifyHTML(strings.TrimSpace(trim[2:])) + "</li>\n")
 		default:
 			closeList()
-			out.WriteString("<p>" + escaped + "</p>\n")
+			out.WriteString("<p>" + linkifyHTML(trim) + "</p>\n")
 		}
 	}
 	closeList()

@@ -315,6 +315,20 @@ func (m Model) renderTracePanel(width int) string {
 		content += "\n\n" + corrLabel + "\n\n" + wordWrap(f.Correction, width-6)
 	}
 
+	// Show source paper links
+	if len(f.SourceURLs) > 0 {
+		srcLabel := styleHeader.Render("SOURCES")
+		var srcLines []string
+		for id, u := range f.SourceURLs {
+			short := id
+			if len(short) > 12 {
+				short = short[:12] + "…"
+			}
+			srcLines = append(srcLines, fmt.Sprintf("[%s] %s", short, u))
+		}
+		content += "\n\n" + srcLabel + "\n\n" + strings.Join(srcLines, "\n")
+	}
+
 	return stylePanel.Width(width).Render(content)
 }
 
