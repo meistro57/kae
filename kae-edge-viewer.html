@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KAE Vector Space Explorer - Simple Test</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --cyber-bg: #0a0e14;
+            --cyber-primary: #00ff9f;
+            --cyber-secondary: #00d4ff;
+            --cyber-accent: #ff00ff;
+            --cyber-text: #e6e6e6;
+            --cyber-glow: rgba(0, 255, 159, 0.3);
+        }
+        
+        body {
+            font-family: 'Share Tech Mono', monospace;
+            background: var(--cyber-bg);
+            color: var(--cyber-text);
+            padding: 40px;
+        }
+        
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--cyber-primary);
+            text-shadow: 0 0 20px var(--cyber-glow);
+            margin-bottom: 30px;
+            font-size: 48px;
+            text-align: center;
+        }
+        
+        .subtitle {
+            color: var(--cyber-secondary);
+            text-align: center;
+            margin-bottom: 40px;
+            letter-spacing: 3px;
+            font-size: 14px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: rgba(15, 20, 25, 0.9);
+            border: 1px solid var(--cyber-primary);
+            box-shadow: 0 0 30px var(--cyber-glow);
+            padding: 30px;
+        }
+        
+        .status {
+            background: rgba(0, 255, 159, 0.1);
+            border-left: 3px solid var(--cyber-primary);
+            padding: 15px;
+            margin: 15px 0;
+            font-size: 13px;
+        }
+        
+        .status.error {
+            background: rgba(255, 107, 53, 0.1);
+            border-left-color: #ff6b35;
+        }
+        
+        .status.success {
+            background: rgba(0, 255, 159, 0.1);
+            border-left-color: var(--cyber-primary);
+        }
+        
+        button {
+            background: linear-gradient(135deg, rgba(0, 255, 159, 0.1), rgba(0, 212, 255, 0.1));
+            border: 1px solid var(--cyber-primary);
+            color: var(--cyber-primary);
+            padding: 12px 24px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            margin: 10px 5px;
+            letter-spacing: 1px;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: rgba(0, 255, 159, 0.2);
+            box-shadow: 0 0 15px var(--cyber-glow);
+            transform: translateY(-2px);
+        }
+        
+        #log {
+            background: #000;
+            border: 1px solid var(--cyber-secondary);
+            padding: 20px;
+            margin-top: 20px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 12px;
+            line-height: 1.8;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .log-entry {
+            margin: 5px 0;
+        }
+        
+        .log-success { color: var(--cyber-primary); }
+        .log-error { color: #ff6b35; }
+        .log-info { color: var(--cyber-secondary); }
+    </style>
+</head>
+<body>
+    <h1>KAE VECTOR EXPLORER</h1>
+    <div class="subtitle">QDRANT CONNECTION TEST</div>
+    
+    <div class="container">
+        <h2 style="color: var(--cyber-primary); margin-bottom: 20px; font-family: 'Orbitron', sans-serif;">Connection Test</h2>
+        
+        <div>
+            <button onclick="testQdrantServer()">Test Qdrant Server</button>
+            <button onclick="testQdrantEdge()">Test Qdrant Edge (WASM)</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div id="log"></div>
+    </div>
+    
+    <script>
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = `log-${type}`;
+            logEl.innerHTML += `<div class="log-entry ${className}">[${timestamp}] ${message}</div>`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        async function testQdrantServer() {
+            log('Testing Qdrant server connection...', 'info');
+            
+            try {
+                // Test 1: Check if server is alive
+                log('Checking http://localhost:6333/', 'info');
+                const healthResponse = await fetch('http://localhost:6333/');
+                
+                if (!healthResponse.ok) {
+                    throw new Error(`Server returned ${healthResponse.status}`);
+                }
+                
+                const health = await healthResponse.json();
+                log(`✓ Server alive: ${health.title || 'Qdrant'}`, 'success');
+                
+                // Test 2: List collections
+                log('Fetching collections...', 'info');
+                const collResponse = await fetch('http://localhost:6333/collections');
+                const collections = await collResponse.json();
+                
+                log(`✓ Found ${collections.result.collections.length} collections`, 'success');
+                collections.result.collections.forEach(coll => {
+                    log(`  - ${coll.name}: ${coll.points_count || 0} points`, 'info');
+                });
+                
+                // Test 3: Try to fetch from kae_nodes
+                const hasKae = collections.result.collections.some(c => c.name === 'kae_nodes');
+                
+                if (hasKae) {
+                    log('Fetching sample from kae_nodes...', 'info');
+                    const scrollResponse = await fetch('http://localhost:6333/collections/kae_nodes/points/scroll', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ limit: 5, with_payload: true })
+                    });
+                    
+                    const data = await scrollResponse.json();
+                    log(`✓ Retrieved ${data.result.points.length} sample points`, 'success');
+                    
+                    data.result.points.forEach((point, i) => {
+                        const concept = point.payload?.concept || point.payload?.text || 'Unknown';
+                        const weight = point.payload?.weight || 'N/A';
+                        log(`  ${i+1}. ${concept} (weight: ${weight})`, 'info');
+                    });
+                } else {
+                    log('! kae_nodes collection not found', 'error');
+                }
+                
+                log('✓ SERVER MODE WORKING!', 'success');
+                
+            } catch (error) {
+                log(`✗ Server test failed: ${error.message}`, 'error');
+                log('Make sure Qdrant is running: docker ps | grep qdrant', 'info');
+            }
+        }
+        
+        async function testQdrantEdge() {
+            log('Testing Qdrant Edge (WASM)...', 'info');
+            log('⚠️  This requires installing @qdrant/qdrant-wasm via NPM', 'info');
+            log('For now, this is a placeholder - server mode is the primary method', 'info');
+            log('', 'info');
+            log('To use Qdrant Edge:', 'info');
+            log('1. Serve this file via HTTP (python3 -m http.server)', 'info');
+            log('2. Load Qdrant WASM library', 'info');
+            log('3. Cache data from server to IndexedDB', 'info');
+            log('4. Work offline with cached data', 'info');
+        }
+        
+        // Auto-test on load
+        window.addEventListener('load', () => {
+            log('KAE Vector Explorer loaded', 'success');
+            log('Click "Test Qdrant Server" to check connection', 'info');
+        });
+    </script>
+</body>
+</html>

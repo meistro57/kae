@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KAE Vector Space Explorer</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --cyber-bg: #0a0e14;
+            --cyber-primary: #00ff9f;
+            --cyber-secondary: #00d4ff;
+            --cyber-accent: #ff00ff;
+            --cyber-warning: #ff6b35;
+            --cyber-text: #e6e6e6;
+            --cyber-glow: rgba(0, 255, 159, 0.3);
+        }
+        
+        body {
+            font-family: 'Share Tech Mono', monospace;
+            background: var(--cyber-bg);
+            color: var(--cyber-text);
+            overflow: hidden;
+            cursor: crosshair;
+        }
+        
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(ellipse at center, #0f1419 0%, #0a0e14 100%);
+        }
+        
+        #ui-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+        }
+        
+        .hud {
+            position: absolute;
+            background: linear-gradient(135deg, rgba(10, 14, 20, 0.95) 0%, rgba(15, 20, 25, 0.9) 100%);
+            border: 1px solid var(--cyber-primary);
+            box-shadow: 
+                0 0 20px var(--cyber-glow),
+                inset 0 0 20px rgba(0, 255, 159, 0.1);
+            backdrop-filter: blur(10px);
+            pointer-events: auto;
+            font-family: 'Orbitron', sans-serif;
+        }
+        
+        #header {
+            top: 20px;
+            left: 20px;
+            padding: 20px 30px;
+            border-radius: 4px;
+        }
+        
+        #header h1 {
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--cyber-primary);
+            text-shadow: 0 0 10px var(--cyber-glow);
+            letter-spacing: 3px;
+            margin-bottom: 5px;
+        }
+        
+        #header .subtitle {
+            font-size: 11px;
+            color: var(--cyber-secondary);
+            font-family: 'Share Tech Mono', monospace;
+            letter-spacing: 2px;
+        }
+        
+        #stats {
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            gap: 15px;
+        }
+        
+        .stat-label {
+            color: var(--cyber-secondary);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-value {
+            color: var(--cyber-primary);
+            font-weight: 700;
+            font-size: 14px;
+        }
+        
+        #controls {
+            bottom: 20px;
+            left: 20px;
+            padding: 20px;
+            border-radius: 4px;
+            max-width: 400px;
+        }
+        
+        .control-group {
+            margin: 15px 0;
+        }
+        
+        .control-label {
+            display: block;
+            color: var(--cyber-secondary);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: linear-gradient(135deg, rgba(0, 255, 159, 0.1) 0%, rgba(0, 212, 255, 0.1) 100%);
+            border: 1px solid var(--cyber-primary);
+            color: var(--cyber-primary);
+            padding: 8px 16px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 2px;
+        }
+        
+        button:hover {
+            background: linear-gradient(135deg, rgba(0, 255, 159, 0.3) 0%, rgba(0, 212, 255, 0.3) 100%);
+            box-shadow: 0 0 15px var(--cyber-glow);
+            transform: translateY(-2px);
+        }
+        
+        button.active {
+            background: var(--cyber-primary);
+            color: var(--cyber-bg);
+            box-shadow: 0 0 20px var(--cyber-glow);
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--cyber-primary), var(--cyber-accent));
+            border: none;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+            border-radius: 2px;
+        }
+        
+        input[type="range"]:hover {
+            opacity: 1;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: var(--cyber-primary);
+            border: 2px solid var(--cyber-bg);
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--cyber-glow);
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            background: rgba(0, 255, 159, 0.1);
+            border: 1px solid var(--cyber-primary);
+            color: var(--cyber-text);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 12px;
+            border-radius: 2px;
+        }
+        
+        input[type="text"]:focus {
+            outline: none;
+            box-shadow: 0 0 15px var(--cyber-glow);
+        }
+        
+        #info-panel {
+            bottom: 20px;
+            right: 20px;
+            padding: 20px;
+            border-radius: 4px;
+            max-width: 350px;
+            max-height: 400px;
+            overflow-y: auto;
+            display: none;
+        }
+        
+        #info-panel.active {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        .info-title {
+            color: var(--cyber-primary);
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            text-shadow: 0 0 10px var(--cyber-glow);
+        }
+        
+        .info-section {
+            margin: 12px 0;
+            padding: 10px;
+            background: rgba(0, 255, 159, 0.05);
+            border-left: 2px solid var(--cyber-secondary);
+        }
+        
+        .info-label {
+            color: var(--cyber-secondary);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            color: var(--cyber-text);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 200;
+        }
+        
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(0, 255, 159, 0.1);
+            border-top: 4px solid var(--cyber-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+            box-shadow: 0 0 20px var(--cyber-glow);
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: var(--cyber-primary);
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        #canvas-container::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 255, 159, 0.03) 0px,
+                transparent 1px,
+                transparent 2px,
+                rgba(0, 255, 159, 0.03) 3px
+            );
+            pointer-events: none;
+            z-index: 50;
+        }
+        
+        #info-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        #info-panel::-webkit-scrollbar-track {
+            background: rgba(0, 255, 159, 0.05);
+        }
+        
+        #info-panel::-webkit-scrollbar-thumb {
+            background: var(--cyber-primary);
+            border-radius: 4px;
+            box-shadow: 0 0 10px var(--cyber-glow);
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div id="loading">
+        <div class="spinner"></div>
+        <div class="loading-text">INITIALIZING VECTOR SPACE...</div>
+    </div>
+    
+    <div id="ui-overlay">
+        <div id="header" class="hud">
+            <h1>KAE VECTOR EXPLORER</h1>
+            <div class="subtitle">KNOWLEDGE ARCHAEOLOGY ENGINE // 3D VISUALIZATION</div>
+        </div>
+        
+        <div id="stats" class="hud">
+            <div class="stat-row">
+                <span class="stat-label">Nodes</span>
+                <span class="stat-value" id="node-count">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Connections</span>
+                <span class="stat-value" id="edge-count">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Dimensions</span>
+                <span class="stat-value" id="dimensions">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Selected</span>
+                <span class="stat-value" id="selected">None</span>
+            </div>
+        </div>
+        
+        <div id="controls" class="hud">
+            <div class="control-group">
+                <span class="control-label">Search Concepts</span>
+                <input type="text" id="search-box" placeholder="Type to filter...">
+            </div>
+            
+            <div class="control-group">
+                <span class="control-label">View Mode</span>
+                <div class="button-group">
+                    <button id="btn-3d" class="active">3D</button>
+                    <button id="btn-2d">2D Projection</button>
+                    <button id="btn-cluster">Clusters</button>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <span class="control-label">Color By</span>
+                <div class="button-group">
+                    <button id="btn-color-domain" class="active">Domain</button>
+                    <button id="btn-color-weight">Weight</button>
+                    <button id="btn-color-run">Run ID</button>
+                    <button id="btn-color-anomaly">Anomalies</button>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <span class="control-label">Node Size: <span id="size-value">1.0</span></span>
+                <input type="range" id="node-size" min="0.5" max="3" step="0.1" value="1">
+            </div>
+            
+            <div class="control-group">
+                <span class="control-label">Actions</span>
+                <div class="button-group">
+                    <button id="btn-physics-toggle" class="active">Physics</button>
+                    <button id="btn-reset">Reset View</button>
+                    <button id="btn-export">Export Data</button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="info-panel" class="hud">
+            <div class="info-title" id="info-title">Node Details</div>
+            <div class="info-section">
+                <div class="info-label">Concept</div>
+                <div class="info-value" id="info-concept">—</div>
+            </div>
+            <div class="info-section">
+                <div class="info-label">Weight</div>
+                <div class="info-value" id="info-weight">—</div>
+            </div>
+            <div class="info-section">
+                <div class="info-label">Domain</div>
+                <div class="info-value" id="info-domain">—</div>
+            </div>
+            <div class="info-section">
+                <div class="info-label">Run ID</div>
+                <div class="info-value" id="info-run">—</div>
+            </div>
+            <div class="info-section">
+                <div class="info-label">Cycle</div>
+                <div class="info-value" id="info-cycle">—</div>
+            </div>
+            <div class="info-section">
+                <div class="info-label">Anomaly</div>
+                <div class="info-value" id="info-anomaly">—</div>
+            </div>
+            <div class="info-section">
+                <div class="info-label">Connections</div>
+                <div class="info-value" id="info-connections">—</div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, controls;
+        let nodes = [], edges = [];
+        let nodeObjects = [], edgeObjects = [];
+        let selectedNode = null;
+        let physicsEnabled = true;
+        let colorMode = 'domain';
+        
+        const domainColors = {
+            'ingested': 0x00ff9f,
+            'inferred': 0x00d4ff,
+            'anomaly': 0xff00ff,
+            'emergent': 0xff6b35
+        };
+        
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x0a0e14, 0.0015);
+            
+            camera = new THREE.PerspectiveCamera(
+                75,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                2000
+            );
+            camera.position.set(0, 0, 50);
+            
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true,
+                alpha: true 
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setClearColor(0x0a0e14, 1);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+            
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+            
+            const pointLight1 = new THREE.PointLight(0x00ff9f, 1, 100);
+            pointLight1.position.set(50, 50, 50);
+            scene.add(pointLight1);
+            
+            const pointLight2 = new THREE.PointLight(0x00d4ff, 1, 100);
+            pointLight2.position.set(-50, -50, 50);
+            scene.add(pointLight2);
+            
+            const gridHelper = new THREE.GridHelper(100, 20, 0x00ff9f, 0x0a0e14);
+            gridHelper.material.opacity = 0.1;
+            gridHelper.material.transparent = true;
+            scene.add(gridHelper);
+            
+            let isDragging = false;
+            let previousMousePosition = { x: 0, y: 0 };
+            
+            renderer.domElement.addEventListener('mousedown', (e) => {
+                isDragging = true;
+            });
+            
+            renderer.domElement.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const deltaX = e.offsetX - previousMousePosition.x;
+                    const deltaY = e.offsetY - previousMousePosition.y;
+                    
+                    camera.position.x -= deltaX * 0.1;
+                    camera.position.y += deltaY * 0.1;
+                }
+                
+                previousMousePosition = { x: e.offsetX, y: e.offsetY };
+            });
+            
+            renderer.domElement.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+            
+            renderer.domElement.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                camera.position.z += e.deltaY * 0.05;
+                camera.position.z = Math.max(10, Math.min(200, camera.position.z));
+            });
+            
+            renderer.domElement.addEventListener('click', onNodeClick);
+            
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+            
+            setupUI();
+            loadData();
+            animate();
+        }
+        
+        function setupUI() {
+            document.getElementById('search-box').addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                nodeObjects.forEach((obj, i) => {
+                    const node = nodes[i];
+                    const matches = node.concept.toLowerCase().includes(query) ||
+                                  (node.domain && node.domain.toLowerCase().includes(query)) ||
+                                  (node.run_id && node.run_id.toLowerCase().includes(query));
+                    
+                    obj.visible = !query || matches;
+                    
+                    if (matches && query) {
+                        obj.material.emissiveIntensity = 0.8;
+                        obj.scale.setScalar(1.5);
+                    } else {
+                        obj.material.emissiveIntensity = 0.3;
+                        obj.scale.setScalar(1.0);
+                    }
+                });
+            });
+            
+            document.getElementById('node-size').addEventListener('input', (e) => {
+                const scale = parseFloat(e.target.value);
+                document.getElementById('size-value').textContent = scale.toFixed(1);
+                nodeObjects.forEach(obj => {
+                    if (obj.visible) {
+                        obj.scale.setScalar(scale);
+                    }
+                });
+            });
+            
+            document.getElementById('btn-3d').addEventListener('click', () => setViewMode('3d'));
+            document.getElementById('btn-2d').addEventListener('click', () => setViewMode('2d'));
+            document.getElementById('btn-cluster').addEventListener('click', () => setViewMode('cluster'));
+            
+            document.getElementById('btn-color-domain').addEventListener('click', () => setColorMode('domain'));
+            document.getElementById('btn-color-weight').addEventListener('click', () => setColorMode('weight'));
+            document.getElementById('btn-color-run').addEventListener('click', () => setColorMode('run'));
+            document.getElementById('btn-color-anomaly').addEventListener('click', () => setColorMode('anomaly'));
+            
+            document.getElementById('btn-physics-toggle').addEventListener('click', function() {
+                physicsEnabled = !physicsEnabled;
+                this.textContent = physicsEnabled ? 'Physics' : 'Static';
+                this.classList.toggle('active');
+            });
+            
+            document.getElementById('btn-reset').addEventListener('click', resetView);
+            document.getElementById('btn-export').addEventListener('click', exportData);
+        }
+        
+        async function loadData() {
+            try {
+                await loadFromQdrant();
+            } catch (error) {
+                console.error('Failed to load from Qdrant:', error);
+                document.querySelector('.loading-text').textContent = 'CONNECTING TO QDRANT...';
+                
+                try {
+                    await loadFromQdrant('http://localhost:6333');
+                } catch (localError) {
+                    console.error('Localhost also failed, using sample data:', localError);
+                    generateSampleData();
+                }
+            }
+            
+            createVisualization();
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        async function loadFromQdrant(baseUrl = 'http://localhost:6333') {
+            document.querySelector('.loading-text').textContent = 'LOADING FROM QDRANT...';
+            
+            const response = await fetch(`${baseUrl}/collections/kae_nodes/points/scroll`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    limit: 1000,
+                    with_payload: true,
+                    with_vector: true,
+                    offset: null
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Qdrant responded with ${response.status}`);
+            }
+            
+            const data = await response.json();
+            const points = data.result.points;
+            
+            document.querySelector('.loading-text').textContent = `PROCESSING ${points.length} NODES...`;
+            
+            points.forEach((point, index) => {
+                const payload = point.payload;
+                const vector = point.vector;
+                
+                let position;
+                if (vector && vector.length >= 3) {
+                    position = {
+                        x: vector[0] * 50,
+                        y: vector[1] * 50,
+                        z: vector[2] * 50
+                    };
+                } else {
+                    position = {
+                        x: (Math.random() - 0.5) * 100,
+                        y: (Math.random() - 0.5) * 100,
+                        z: (Math.random() - 0.5) * 100
+                    };
+                }
+                
+                nodes.push({
+                    id: index,
+                    qdrant_id: point.id,
+                    concept: payload.label || payload.concept || payload.text || `Node ${index}`,
+                    weight: payload.weight || 1.0,
+                    domain: payload.domain || 'unknown',
+                    run_id: payload.run_id || 'unknown',
+                    cycle: payload.cycle || 0,
+                    anomaly: payload.anomaly || false,
+                    position: position,
+                    vector: vector,
+                    payload: payload
+                });
+            });
+            
+            document.querySelector('.loading-text').textContent = 'CALCULATING CONNECTIONS...';
+            await generateEdgesFromVectors();
+            
+            updateStats();
+        }
+        
+        async function generateEdgesFromVectors() {
+            const MAX_CONNECTIONS = 5;
+            const SIMILARITY_THRESHOLD = 0.7;
+            
+            for (let i = 0; i < Math.min(nodes.length, 200); i++) {
+                const sourceNode = nodes[i];
+                if (!sourceNode.vector) continue;
+                
+                const similarities = [];
+                for (let j = 0; j < nodes.length; j++) {
+                    if (i === j || !nodes[j].vector) continue;
+                    
+                    const similarity = cosineSimilarity(sourceNode.vector, nodes[j].vector);
+                    if (similarity > SIMILARITY_THRESHOLD) {
+                        similarities.push({ index: j, similarity });
+                    }
+                }
+                
+                similarities
+                    .sort((a, b) => b.similarity - a.similarity)
+                    .slice(0, MAX_CONNECTIONS)
+                    .forEach(sim => {
+                        edges.push({ 
+                            source: i, 
+                            target: sim.index,
+                            weight: sim.similarity 
+                        });
+                    });
+            }
+        }
+        
+        function cosineSimilarity(vecA, vecB) {
+            if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
+            
+            let dotProduct = 0;
+            let normA = 0;
+            let normB = 0;
+            
+            for (let i = 0; i < vecA.length; i++) {
+                dotProduct += vecA[i] * vecB[i];
+                normA += vecA[i] * vecA[i];
+                normB += vecB[i] * vecB[i];
+            }
+            
+            normA = Math.sqrt(normA);
+            normB = Math.sqrt(normB);
+            
+            if (normA === 0 || normB === 0) return 0;
+            
+            return dotProduct / (normA * normB);
+        }
+        
+        function generateSampleData() {
+            const runIds = ['run_1776184412', 'run_1776185360', 'run_1776192884', 'run_1776193715'];
+            const domains = ['ingested', 'inferred', 'anomaly'];
+            const concepts = [
+                'Trinity Paradox', 'Divine Omniscience', 'Free Will vs Sovereignty', 'Pagan Creolization',
+                'Constraint-Induced Vertex Generation', 'Pseudofield', 'Trauma', 'Topological Entropy',
+                'Inhibitory Control', 'Pseudo-psychology', 'Platonic Substrate', 'Stoic Endurance',
+                'Identity Fusion', 'Lips of Wisdom Closed', 'The Elect', 'Stochastic symmetry',
+                'Bell inequalities ↔ cut polytope facets', 'Saturation as a Universal Bottleneck'
+            ];
+            
+            for (let i = 0; i < 150; i++) {
+                const isAnomaly = Math.random() > 0.7;
+                nodes.push({
+                    id: i,
+                    concept: concepts[Math.floor(Math.random() * concepts.length)],
+                    weight: Math.random() * 13,
+                    domain: domains[Math.floor(Math.random() * domains.length)],
+                    run_id: runIds[Math.floor(Math.random() * runIds.length)],
+                    cycle: Math.floor(Math.random() * 50),
+                    anomaly: isAnomaly,
+                    position: {
+                        x: (Math.random() - 0.5) * 100,
+                        y: (Math.random() - 0.5) * 100,
+                        z: (Math.random() - 0.5) * 100
+                    }
+                });
+            }
+            
+            for (let i = 0; i < nodes.length; i++) {
+                const numConnections = Math.floor(Math.random() * 5) + 1;
+                for (let j = 0; j < numConnections; j++) {
+                    const target = Math.floor(Math.random() * nodes.length);
+                    if (target !== i) {
+                        edges.push({ source: i, target });
+                    }
+                }
+            }
+            
+            updateStats();
+        }
+        
+        function createVisualization() {
+            nodeObjects.forEach(obj => scene.remove(obj));
+            edgeObjects.forEach(obj => scene.remove(obj));
+            nodeObjects = [];
+            edgeObjects = [];
+            
+            const nodeGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+            
+            nodes.forEach((node, index) => {
+                const color = getNodeColor(node);
+                const material = new THREE.MeshPhongMaterial({ 
+                    color: color,
+                    emissive: color,
+                    emissiveIntensity: 0.3,
+                    shininess: 100
+                });
+                
+                const mesh = new THREE.Mesh(nodeGeometry, material);
+                mesh.position.set(node.position.x, node.position.y, node.position.z);
+                mesh.userData = node;
+                
+                if (node.weight > 7) {
+                    const glowGeometry = new THREE.SphereGeometry(0.8, 16, 16);
+                    const glowMaterial = new THREE.MeshBasicMaterial({ 
+                        color: color,
+                        transparent: true,
+                        opacity: 0.3
+                    });
+                    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+                    mesh.add(glow);
+                }
+                
+                scene.add(mesh);
+                nodeObjects.push(mesh);
+            });
+            
+            const edgeMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x00ff9f,
+                transparent: true,
+                opacity: 0.2
+            });
+            
+            edges.forEach(edge => {
+                const sourceNode = nodes[edge.source];
+                const targetNode = nodes[edge.target];
+                
+                const points = [
+                    new THREE.Vector3(sourceNode.position.x, sourceNode.position.y, sourceNode.position.z),
+                    new THREE.Vector3(targetNode.position.x, targetNode.position.y, targetNode.position.z)
+                ];
+                
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const line = new THREE.Line(geometry, edgeMaterial);
+                
+                scene.add(line);
+                edgeObjects.push(line);
+            });
+        }
+        
+        function getNodeColor(node) {
+            switch(colorMode) {
+                case 'domain':
+                    return domainColors[node.domain] || 0xffffff;
+                case 'weight':
+                    const intensity = Math.min(node.weight / 10, 1);
+                    return new THREE.Color().setHSL(0.3 - intensity * 0.3, 1, 0.5);
+                case 'run':
+                    const runHash = hashString(node.run_id);
+                    return new THREE.Color().setHSL(runHash, 0.8, 0.6);
+                case 'anomaly':
+                    return node.anomaly === true ? 0xff00ff : 0x00ff9f;
+                default:
+                    return 0x00ff9f;
+            }
+        }
+        
+        function hashString(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                hash = hash & hash;
+            }
+            return Math.abs(hash % 100) / 100;
+        }
+        
+        function setViewMode(mode) {
+            document.querySelectorAll('#controls .button-group button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            if (mode === '2d') {
+                nodeObjects.forEach((obj, i) => {
+                    obj.position.z = 0;
+                    nodes[i].position.z = 0;
+                });
+            } else if (mode === 'cluster') {
+                const domainPositions = {
+                    'ingested': { x: -30, y: 0, z: 0 },
+                    'inferred': { x: 30, y: 0, z: 0 },
+                    'anomaly': { x: 0, y: 30, z: 0 }
+                };
+                
+                nodeObjects.forEach((obj, i) => {
+                    const basePos = domainPositions[nodes[i].domain];
+                    obj.position.set(
+                        basePos.x + (Math.random() - 0.5) * 20,
+                        basePos.y + (Math.random() - 0.5) * 20,
+                        basePos.z + (Math.random() - 0.5) * 20
+                    );
+                });
+            }
+            
+            updateEdges();
+        }
+        
+        function setColorMode(mode) {
+            colorMode = mode;
+            document.querySelectorAll('#btn-color-domain, #btn-color-weight, #btn-color-run, #btn-color-anomaly').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            nodeObjects.forEach((obj, i) => {
+                const color = getNodeColor(nodes[i]);
+                obj.material.color.setHex(color);
+                obj.material.emissive.setHex(color);
+            });
+        }
+        
+        function updateEdges() {
+            edgeObjects.forEach((line, i) => {
+                const edge = edges[i];
+                const sourceNode = nodes[edge.source];
+                const targetNode = nodes[edge.target];
+                
+                const positions = [
+                    sourceNode.position.x, sourceNode.position.y, sourceNode.position.z,
+                    targetNode.position.x, targetNode.position.y, targetNode.position.z
+                ];
+                
+                line.geometry.setAttribute('position', 
+                    new THREE.Float32BufferAttribute(positions, 3));
+            });
+        }
+        
+        function resetView() {
+            camera.position.set(0, 0, 50);
+            nodes = [];
+            edges = [];
+            loadData();
+        }
+        
+        function onNodeClick(event) {
+            const mouse = new THREE.Vector2(
+                (event.clientX / window.innerWidth) * 2 - 1,
+                -(event.clientY / window.innerHeight) * 2 + 1
+            );
+            
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+            
+            const intersects = raycaster.intersectObjects(nodeObjects);
+            
+            if (intersects.length > 0) {
+                selectNode(intersects[0].object);
+            } else {
+                deselectNode();
+            }
+        }
+        
+        function selectNode(mesh) {
+            if (selectedNode) {
+                selectedNode.material.emissiveIntensity = 0.3;
+            }
+            
+            selectedNode = mesh;
+            selectedNode.material.emissiveIntensity = 1.0;
+            
+            const node = mesh.userData;
+            document.getElementById('info-concept').textContent = node.concept;
+            document.getElementById('info-weight').textContent = node.weight.toFixed(2);
+            document.getElementById('info-domain').textContent = node.domain;
+            document.getElementById('info-run').textContent = node.run_id;
+            document.getElementById('info-cycle').textContent = node.cycle;
+            document.getElementById('info-anomaly').textContent = node.anomaly ? '⚠️ YES' : 'No';
+            document.getElementById('info-anomaly').style.color = node.anomaly ? 'var(--cyber-accent)' : 'var(--cyber-text)';
+            
+            const connections = edges.filter(e => e.source === node.id || e.target === node.id).length;
+            document.getElementById('info-connections').textContent = connections;
+            
+            document.getElementById('info-panel').classList.add('active');
+            document.getElementById('selected').textContent = node.concept;
+        }
+        
+        function deselectNode() {
+            if (selectedNode) {
+                selectedNode.material.emissiveIntensity = 0.3;
+                selectedNode = null;
+            }
+            document.getElementById('info-panel').classList.remove('active');
+            document.getElementById('selected').textContent = 'None';
+        }
+        
+        function updateStats() {
+            document.getElementById('node-count').textContent = nodes.length;
+            document.getElementById('edge-count').textContent = edges.length;
+            document.getElementById('dimensions').textContent = '3D';
+        }
+        
+        function exportData() {
+            const exportObj = {
+                nodes: nodes.map(n => ({
+                    concept: n.concept,
+                    weight: n.weight,
+                    domain: n.domain,
+                    run_id: n.run_id,
+                    cycle: n.cycle,
+                    anomaly: n.anomaly,
+                    position: n.position
+                })),
+                edges: edges,
+                metadata: {
+                    exported: new Date().toISOString(),
+                    total_nodes: nodes.length,
+                    total_edges: edges.length
+                }
+            };
+            
+            const dataStr = JSON.stringify(exportObj, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `kae-graph-export-${Date.now()}.json`;
+            link.click();
+            
+            URL.revokeObjectURL(url);
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (physicsEnabled) {
+                nodeObjects.forEach((obj, i) => {
+                    const time = Date.now() * 0.0001;
+                    obj.position.x += Math.sin(time + i) * 0.01;
+                    obj.position.y += Math.cos(time + i * 0.5) * 0.01;
+                    
+                    obj.rotation.x += 0.001;
+                    obj.rotation.y += 0.002;
+                });
+                
+                updateEdges();
+            }
+            
+            camera.position.x += Math.sin(Date.now() * 0.0001) * 0.02;
+            camera.lookAt(0, 0, 0);
+            
+            renderer.render(scene, camera);
+        }
+        
+        init();
+    </script>
+</body>
+</html>
