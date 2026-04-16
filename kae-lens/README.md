@@ -1,6 +1,8 @@
 # KAE Lens
 
 > *KAE ingests reality. Lens focuses it.*
+> 
+<img width="1536" height="2752" alt="kae" src="https://github.com/user-attachments/assets/029aaff8-7a7d-4f02-ae3f-209e2978cae0" />
 
 KAE Lens is an autonomous post-processing intelligence layer that sits on top of the Knowledge Archaeology Engine (KAE). It fires when KAE deposits new knowledge into Qdrant, reasons over the full topology of the ingested knowledge graph, and surfaces connections, contradictions, higher-order clusters, and anomalies that KAE never explicitly made.
 
