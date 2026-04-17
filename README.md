@@ -465,6 +465,7 @@ All sources run in parallel each cycle. CORE is silently skipped if the key is a
 | Collections | `kae_chunks` (text chunks), `kae_nodes` (graph), `kae_meta_graph` (cross-run meta-graph), `kae_lens_findings` (Lens findings) |
 | Distance | Cosine |
 | Payload indexes | `domain`, `label` (keyword, created before HNSW builds) |
+| `kae_chunks` payload | `text`, `source`, `run_topic` (exploration theme), `semantic_domain` (content classification), `domain_confidence` (0–1), `run_id` |
 | Batch size | 64 points per upsert request |
 | Retry | 3 attempts, 100ms/300ms backoff |
 | `hnsw_ef` | `max(k×4, 64)` at query time |
@@ -505,6 +506,7 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 - [x] **Lens anomaly correction** — data-grounded second LLM pass resolves anomaly/contradiction findings against source evidence
 - [x] **Lens performance tuning** — per-call LLM timeout, relaxed density thresholds, paced batch polling
 - [x] **Source paper links** — findings carry a `source_urls` map; TUI, web dashboard, and HTML reports all surface clickable links to the originating papers
+- [x] **Domain contamination fix** — `kae_chunks` now stores `run_topic` (what the run was exploring) separately from `semantic_domain` (what the chunk is actually about); each embed batch is LLM-classified via `ClassifyDomainBatch`; migrate existing chunks with `go run ./scripts/migrate_domains [--dry-run]`
 
 ### Tier 2 — Knowledge Graph Intelligence (complete)
 - [x] **Persistent meta-graph** (`kae_meta_graph`) — cross-run concept aggregation with attractor detection

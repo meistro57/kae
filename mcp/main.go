@@ -49,13 +49,19 @@ type InputSchema struct {
 }
 
 type Property struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Type        string    `json:"type"`
+	Description string    `json:"description"`
+	Items       *Property `json:"items,omitempty"`
 }
 
 // ── Qdrant client ─────────────────────────────────────────────────────────────
 
-const qdrantURL = "http://localhost:6333"
+var qdrantURL = func() string {
+	if u := os.Getenv("QDRANT_URL"); u != "" {
+		return u
+	}
+	return "http://localhost:6333"
+}()
 
 func qdrantGet(path string) (map[string]any, error) {
 	resp, err := http.Get(qdrantURL + path)
@@ -301,7 +307,7 @@ func toolSearchChunks(query string, limit int) (string, error) {
 			matches = append(matches, match{
 				text:   strVal(payload, "text"),
 				source: strVal(payload, "source"),
-				topic:  strVal(payload, "topic"),
+				topic:  firstNonEmpty(strVal(payload, "semantic_domain"), strVal(payload, "run_topic"), strVal(payload, "topic")),
 				score:  score,
 			})
 		}
@@ -758,6 +764,197 @@ var tools = []ToolDef{
 		Description: "Show domain bridge and moat analysis — concepts that connect domains (bridges) and domain pairs with no connecting concepts (moats).",
 		InputSchema: InputSchema{Type: "object", Properties: map[string]Property{}},
 	},
+
+	// ── Collection management ───────────────────────────────────────────────
+	{
+		Name:        "qdrant_collection_info",
+		Description: "Get detailed info about a specific Qdrant collection: vector size, distance metric, point count, segment count, and status.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Name of the collection to inspect"},
+			},
+			Required: []string{"collection_name"},
+		},
+	},
+	{
+		Name:        "qdrant_create_collection",
+		Description: "Create a new Qdrant collection with the specified vector configuration.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Name for the new collection"},
+				"vector_size":     {Type: "integer", Description: "Vector dimension (e.g. 1536 for OpenAI, 768 for BERT)"},
+				"distance":        {Type: "string", Description: "Distance metric: Cosine (default), Euclid, Dot, or Manhattan"},
+				"on_disk":         {Type: "boolean", Description: "Store vectors on disk to reduce RAM (default: false)"},
+			},
+			Required: []string{"collection_name", "vector_size"},
+		},
+	},
+	{
+		Name:        "qdrant_delete_collection",
+		Description: "PERMANENTLY DELETE a Qdrant collection and all its data. IRREVERSIBLE — double-check the name.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Name of the collection to DELETE permanently"},
+			},
+			Required: []string{"collection_name"},
+		},
+	},
+
+	// ── Point operations ────────────────────────────────────────────────────
+	{
+		Name:        "qdrant_scroll_points",
+		Description: "Browse points in any Qdrant collection with pagination. Returns a next_offset token to fetch subsequent pages.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Collection to scroll"},
+				"limit":           {Type: "integer", Description: "Points per page (default: 10, max: 100)"},
+				"offset":          {Type: "string", Description: "Pagination token from a previous response (omit for first page)"},
+				"with_payload":    {Type: "boolean", Description: "Include payload fields (default: true)"},
+				"with_vector":     {Type: "boolean", Description: "Include raw vectors — use sparingly (default: false)"},
+				"filter":          {Type: "object", Description: `Qdrant filter DSL e.g. {"must":[{"key":"run_id","match":{"value":"run_123"}}]}`},
+			},
+			Required: []string{"collection_name"},
+		},
+	},
+	{
+		Name:        "qdrant_get_point",
+		Description: "Retrieve a single point by ID from any Qdrant collection.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Collection name"},
+				"point_id":        {Type: "string", Description: "Point ID — numeric string (e.g. '12345') or UUID"},
+				"with_payload":    {Type: "boolean", Description: "Include payload (default: true)"},
+				"with_vector":     {Type: "boolean", Description: "Include vector (default: false)"},
+			},
+			Required: []string{"collection_name", "point_id"},
+		},
+	},
+	{
+		Name:        "qdrant_get_points",
+		Description: "Retrieve multiple specific points by ID from a Qdrant collection in one request.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Collection name"},
+				"point_ids":       {Type: "array", Description: "Array of point IDs (numeric strings or UUIDs)", Items: &Property{Type: "string"}},
+				"with_payload":    {Type: "boolean", Description: "Include payloads (default: true)"},
+				"with_vector":     {Type: "boolean", Description: "Include vectors (default: false)"},
+			},
+			Required: []string{"collection_name", "point_ids"},
+		},
+	},
+	{
+		Name:        "qdrant_count_points",
+		Description: "Count points in a Qdrant collection, optionally scoped to a filter.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Collection to count"},
+				"filter":          {Type: "object", Description: "Qdrant filter DSL (optional, omit to count all points)"},
+				"exact":           {Type: "boolean", Description: "Exact count vs approximate (default: true; set false for very large collections)"},
+			},
+			Required: []string{"collection_name"},
+		},
+	},
+
+	// ── Search ──────────────────────────────────────────────────────────────
+	{
+		Name:        "qdrant_search",
+		Description: "Vector similarity search in a Qdrant collection. Requires a query_vector matching the collection's vector dimension.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Collection to search"},
+				"query_vector":    {Type: "array", Description: "Query vector — float array matching the collection's vector size", Items: &Property{Type: "number"}},
+				"limit":           {Type: "integer", Description: "Number of results (default: 10, max: 100)"},
+				"score_threshold": {Type: "number", Description: "Minimum similarity score (0–1 for Cosine); omit to return all"},
+				"filter":          {Type: "object", Description: "Qdrant filter DSL (optional)"},
+				"with_payload":    {Type: "boolean", Description: "Include payloads (default: true)"},
+				"with_vector":     {Type: "boolean", Description: "Include vectors (default: false)"},
+			},
+			Required: []string{"collection_name", "query_vector"},
+		},
+	},
+	{
+		Name:        "qdrant_recommend",
+		Description: "Recommend points similar to given examples (positive IDs) and dissimilar from others (negative IDs) using existing collection vectors.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Collection to search"},
+				"positive_ids":    {Type: "array", Description: "Point IDs to find results similar to (at least one required)", Items: &Property{Type: "string"}},
+				"negative_ids":    {Type: "array", Description: "Point IDs to steer away from (optional)", Items: &Property{Type: "string"}},
+				"limit":           {Type: "integer", Description: "Number of results (default: 10)"},
+				"filter":          {Type: "object", Description: "Qdrant filter DSL (optional)"},
+				"with_payload":    {Type: "boolean", Description: "Include payloads (default: true)"},
+			},
+			Required: []string{"collection_name", "positive_ids"},
+		},
+	},
+
+	// ── Payload management ──────────────────────────────────────────────────
+	{
+		Name:        "qdrant_set_payload",
+		Description: "Set or merge payload fields on specific points. Unmodified payload keys are preserved.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Collection name"},
+				"point_ids":       {Type: "array", Description: "Point IDs to update", Items: &Property{Type: "string"}},
+				"payload":         {Type: "object", Description: "Key-value pairs to set (merged into existing payload)"},
+			},
+			Required: []string{"collection_name", "point_ids", "payload"},
+		},
+	},
+	{
+		Name:        "qdrant_delete_payload",
+		Description: "Remove specific payload keys from points. Other payload fields are preserved.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Collection name"},
+				"point_ids":       {Type: "array", Description: "Point IDs to update", Items: &Property{Type: "string"}},
+				"keys":            {Type: "array", Description: "Payload key names to remove", Items: &Property{Type: "string"}},
+			},
+			Required: []string{"collection_name", "point_ids", "keys"},
+		},
+	},
+	{
+		Name:        "qdrant_clear_payload",
+		Description: "Remove ALL payload from specific points (vectors are preserved).",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Collection name"},
+				"point_ids":       {Type: "array", Description: "Point IDs to clear payload from", Items: &Property{Type: "string"}},
+			},
+			Required: []string{"collection_name", "point_ids"},
+		},
+	},
+
+	// ── Advanced querying ───────────────────────────────────────────────────
+	{
+		Name:        "qdrant_query_points",
+		Description: "Query any Qdrant collection with the full filter DSL (must/should/must_not, match, range, text). Returns paginated results with optional client-side sort.",
+		InputSchema: InputSchema{
+			Type: "object",
+			Properties: map[string]Property{
+				"collection_name": {Type: "string", Description: "Collection to query"},
+				"filter":          {Type: "object", Description: `Qdrant filter DSL e.g. {"must":[{"key":"weight","range":{"gte":3.0}}]}`},
+				"limit":           {Type: "integer", Description: "Max results (default: 10, max: 100)"},
+				"offset":          {Type: "string", Description: "Pagination token from a previous response"},
+				"with_payload":    {Type: "boolean", Description: "Include payloads (default: true)"},
+				"with_vector":     {Type: "boolean", Description: "Include vectors (default: false)"},
+				"order_by":        {Type: "string", Description: "Payload field name to sort results by (client-side ascending sort)"},
+			},
+			Required: []string{"collection_name"},
+		},
+	},
 }
 
 func handleRequest(req JSONRPCRequest) JSONRPCResponse {
@@ -874,6 +1071,160 @@ func dispatchTool(name string, args map[string]any) (string, error) {
 	case "kae_domain_analysis":
 		return toolDomainAnalysis()
 
+	// ── Collection management ───────────────────────────────────────────────
+
+	case "qdrant_collection_info":
+		name, _ := args["collection_name"].(string)
+		return toolCollectionInfo(name)
+
+	case "qdrant_create_collection":
+		name, _ := args["collection_name"].(string)
+		distance, _ := args["distance"].(string)
+		vectorSize := 0
+		if vs, ok := args["vector_size"].(float64); ok {
+			vectorSize = int(vs)
+		}
+		onDisk, _ := args["on_disk"].(bool)
+		return toolCreateCollection(name, distance, vectorSize, onDisk)
+
+	case "qdrant_delete_collection":
+		name, _ := args["collection_name"].(string)
+		return toolDeleteCollection(name)
+
+	// ── Point operations ────────────────────────────────────────────────────
+
+	case "qdrant_scroll_points":
+		collection, _ := args["collection_name"].(string)
+		limit := 10
+		if l, ok := args["limit"].(float64); ok {
+			limit = int(l)
+		}
+		offset, _ := args["offset"].(string)
+		withPayload := true
+		if v, ok := args["with_payload"].(bool); ok {
+			withPayload = v
+		}
+		withVector := false
+		if v, ok := args["with_vector"].(bool); ok {
+			withVector = v
+		}
+		filter, _ := args["filter"].(map[string]any)
+		return toolScrollPoints(collection, limit, offset, withPayload, withVector, filter)
+
+	case "qdrant_get_point":
+		collection, _ := args["collection_name"].(string)
+		pointID, _ := args["point_id"].(string)
+		withPayload := true
+		if v, ok := args["with_payload"].(bool); ok {
+			withPayload = v
+		}
+		withVector := false
+		if v, ok := args["with_vector"].(bool); ok {
+			withVector = v
+		}
+		return toolGetPoint(collection, pointID, withPayload, withVector)
+
+	case "qdrant_get_points":
+		collection, _ := args["collection_name"].(string)
+		pointIDs := stringArray(args["point_ids"])
+		withPayload := true
+		if v, ok := args["with_payload"].(bool); ok {
+			withPayload = v
+		}
+		withVector := false
+		if v, ok := args["with_vector"].(bool); ok {
+			withVector = v
+		}
+		return toolGetPoints(collection, pointIDs, withPayload, withVector)
+
+	case "qdrant_count_points":
+		collection, _ := args["collection_name"].(string)
+		filter, _ := args["filter"].(map[string]any)
+		exact := true
+		if v, ok := args["exact"].(bool); ok {
+			exact = v
+		}
+		return toolCountPoints(collection, filter, exact)
+
+	// ── Search ──────────────────────────────────────────────────────────────
+
+	case "qdrant_search":
+		collection, _ := args["collection_name"].(string)
+		queryVector := float32Array(args["query_vector"])
+		limit := 10
+		if l, ok := args["limit"].(float64); ok {
+			limit = int(l)
+		}
+		filter, _ := args["filter"].(map[string]any)
+		var scoreThreshold float32
+		if st, ok := args["score_threshold"].(float64); ok {
+			scoreThreshold = float32(st)
+		}
+		withPayload := true
+		if v, ok := args["with_payload"].(bool); ok {
+			withPayload = v
+		}
+		withVector := false
+		if v, ok := args["with_vector"].(bool); ok {
+			withVector = v
+		}
+		return toolSearch(collection, queryVector, limit, filter, scoreThreshold, withPayload, withVector)
+
+	case "qdrant_recommend":
+		collection, _ := args["collection_name"].(string)
+		positiveIDs := stringArray(args["positive_ids"])
+		negativeIDs := stringArray(args["negative_ids"])
+		limit := 10
+		if l, ok := args["limit"].(float64); ok {
+			limit = int(l)
+		}
+		filter, _ := args["filter"].(map[string]any)
+		withPayload := true
+		if v, ok := args["with_payload"].(bool); ok {
+			withPayload = v
+		}
+		return toolRecommend(collection, positiveIDs, negativeIDs, limit, filter, withPayload)
+
+	// ── Payload management ──────────────────────────────────────────────────
+
+	case "qdrant_set_payload":
+		collection, _ := args["collection_name"].(string)
+		pointIDs := stringArray(args["point_ids"])
+		payload, _ := args["payload"].(map[string]any)
+		return toolSetPayload(collection, pointIDs, payload)
+
+	case "qdrant_delete_payload":
+		collection, _ := args["collection_name"].(string)
+		pointIDs := stringArray(args["point_ids"])
+		keys := stringArray(args["keys"])
+		return toolDeletePayload(collection, pointIDs, keys)
+
+	case "qdrant_clear_payload":
+		collection, _ := args["collection_name"].(string)
+		pointIDs := stringArray(args["point_ids"])
+		return toolClearPayload(collection, pointIDs)
+
+	// ── Advanced querying ───────────────────────────────────────────────────
+
+	case "qdrant_query_points":
+		collection, _ := args["collection_name"].(string)
+		filter, _ := args["filter"].(map[string]any)
+		limit := 10
+		if l, ok := args["limit"].(float64); ok {
+			limit = int(l)
+		}
+		offset, _ := args["offset"].(string)
+		withPayload := true
+		if v, ok := args["with_payload"].(bool); ok {
+			withPayload = v
+		}
+		withVector := false
+		if v, ok := args["with_vector"].(bool); ok {
+			withVector = v
+		}
+		orderBy, _ := args["order_by"].(string)
+		return toolQueryPoints(collection, filter, limit, offset, withPayload, withVector, orderBy)
+
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
@@ -919,6 +1270,15 @@ func strVal(m map[string]any, k string) string {
 	if v, ok := m[k]; ok {
 		if s, ok := v.(string); ok {
 			return s
+		}
+	}
+	return ""
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
 		}
 	}
 	return ""

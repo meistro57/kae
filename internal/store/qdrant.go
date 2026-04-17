@@ -33,12 +33,14 @@ func NewClient(baseURL string) *Client {
 
 // Chunk is a source passage stored in Qdrant
 type Chunk struct {
-	ID     string
-	Text   string
-	Source string // URL or title
-	Topic  string // concept this chunk relates to
-	RunID  string // which KAE run produced this
-	Vector []float32
+	ID               string
+	Text             string
+	Source           string  // URL or title
+	RunTopic         string  // what the run was exploring when this was ingested
+	SemanticDomain   string  // what this chunk is actually about (content classification)
+	DomainConfidence float64 // classifier confidence 0.0–1.0
+	RunID            string  // which KAE run produced this
+	Vector           []float32
 }
 
 // StoreChunk upserts a text chunk with its embedding
@@ -47,10 +49,12 @@ func (c *Client) StoreChunk(chunk *Chunk) error {
 		"id":     pointID(chunk.ID),
 		"vector": chunk.Vector,
 		"payload": map[string]any{
-			"text":   chunk.Text,
-			"source": chunk.Source,
-			"topic":  chunk.Topic,
-			"run_id": chunk.RunID,
+			"text":              chunk.Text,
+			"source":            chunk.Source,
+			"run_topic":         chunk.RunTopic,
+			"semantic_domain":   chunk.SemanticDomain,
+			"domain_confidence": chunk.DomainConfidence,
+			"run_id":            chunk.RunID,
 		},
 	}
 	return c.upsertPoints(CollectionChunks, []map[string]any{point})
@@ -86,11 +90,13 @@ func (c *Client) SearchChunks(vector []float32, topK int, filter map[string]any)
 	chunks := make([]*Chunk, 0, len(result.Result))
 	for _, r := range result.Result {
 		chunks = append(chunks, &Chunk{
-			ID:     fmt.Sprintf("%v", r.ID),
-			Text:   strVal(r.Payload, "text"),
-			Source: strVal(r.Payload, "source"),
-			Topic:  strVal(r.Payload, "topic"),
-			RunID:  strVal(r.Payload, "run_id"),
+			ID:               fmt.Sprintf("%v", r.ID),
+			Text:             strVal(r.Payload, "text"),
+			Source:           strVal(r.Payload, "source"),
+			RunTopic:         strVal(r.Payload, "run_topic"),
+			SemanticDomain:   strVal(r.Payload, "semantic_domain"),
+			DomainConfidence: floatVal(r.Payload, "domain_confidence"),
+			RunID:            strVal(r.Payload, "run_id"),
 		})
 	}
 	return chunks, nil

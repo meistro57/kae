@@ -188,7 +188,7 @@ func parseAnchor(p *qdrant.RetrievedPoint) (*anchorPoint, error) {
 
 	title := stringFromMap(payload, "title", "source")
 	content := stringFromMap(payload, "content", "text")
-	domain := stringFromMap(payload, "domain", "topic")
+	domain := stringFromMap(payload, "domain", "semantic_domain", "topic")
 	rawURL := stringFromMap(payload, "url", "source")
 	url := ""
 	if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
@@ -273,7 +273,7 @@ func toNeighborSummaries(points []*qdrant.ScoredPoint) []neighborSummary {
 			ID:      qdrantclient.PointIDStr(p.Id),
 			Score:   p.Score,
 			Title:   stringFromMap(payload, "title", "source"),
-			Domain:  stringFromMap(payload, "domain", "topic"),
+			Domain:  stringFromMap(payload, "domain", "semantic_domain", "topic"),
 			Content: content,
 		})
 	}

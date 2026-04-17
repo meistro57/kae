@@ -273,7 +273,7 @@ doneDrain:
 		chunks := ingestion.Chunk(result.Extract, 200, 30)
 		sc := make([]ingestion.SourceChunk, len(chunks))
 		for i, c := range chunks {
-			sc[i] = ingestion.SourceChunk{Text: c, Source: result.URL, Topic: topic}
+			sc[i] = ingestion.SourceChunk{Text: c, Source: result.URL, RunTopic: topic}
 		}
 		mu.Lock()
 		allChunks = append(allChunks, sc...)
@@ -293,7 +293,7 @@ doneDrain:
 		var sc []ingestion.SourceChunk
 		for _, p := range papers {
 			for _, c := range ingestion.PaperToChunks(p) {
-				sc = append(sc, ingestion.SourceChunk{Text: c, Source: p.URL, Topic: topic})
+				sc = append(sc, ingestion.SourceChunk{Text: c, Source: p.URL, RunTopic: topic})
 			}
 		}
 		mu.Lock()
@@ -325,7 +325,7 @@ doneDrain:
 				continue
 			}
 			for _, c := range ingestion.BookToChunks(book, text) {
-				sc = append(sc, ingestion.SourceChunk{Text: c, Source: book.Title, Topic: topic})
+				sc = append(sc, ingestion.SourceChunk{Text: c, Source: book.Title, RunTopic: topic})
 			}
 		}
 		mu.Lock()
@@ -347,7 +347,7 @@ doneDrain:
 		var sc []ingestion.SourceChunk
 		for _, p := range papers {
 			for _, c := range ingestion.SemanticPaperToChunks(p) {
-				sc = append(sc, ingestion.SourceChunk{Text: c, Source: p.URL, Topic: topic})
+				sc = append(sc, ingestion.SourceChunk{Text: c, Source: p.URL, RunTopic: topic})
 			}
 		}
 		mu.Lock()
@@ -369,7 +369,7 @@ doneDrain:
 		var sc []ingestion.SourceChunk
 		for _, w := range works {
 			for _, c := range ingestion.OpenAlexWorkToChunks(w) {
-				sc = append(sc, ingestion.SourceChunk{Text: c, Source: w.URL, Topic: topic})
+				sc = append(sc, ingestion.SourceChunk{Text: c, Source: w.URL, RunTopic: topic})
 			}
 		}
 		mu.Lock()
@@ -394,7 +394,7 @@ doneDrain:
 		var sc []ingestion.SourceChunk
 		for _, p := range papers {
 			for _, c := range ingestion.CorePaperToChunks(p) {
-				sc = append(sc, ingestion.SourceChunk{Text: c, Source: p.DownloadURL, Topic: topic})
+				sc = append(sc, ingestion.SourceChunk{Text: c, Source: p.DownloadURL, RunTopic: topic})
 			}
 		}
 		mu.Lock()
@@ -416,7 +416,7 @@ doneDrain:
 		var sc []ingestion.SourceChunk
 		for _, a := range abstracts {
 			for _, c := range ingestion.PubMedToChunks(a) {
-				sc = append(sc, ingestion.SourceChunk{Text: c, Source: a.URL, Topic: topic})
+				sc = append(sc, ingestion.SourceChunk{Text: c, Source: a.URL, RunTopic: topic})
 			}
 		}
 		mu.Lock()
@@ -448,8 +448,10 @@ func (e *Engine) embedPhase(topic string, chunks []ingestion.SourceChunk) {
 		batch := chunks[i:end]
 
 		texts := make([]string, len(batch))
+		sources := make([]string, len(batch))
 		for j, c := range batch {
 			texts[j] = c.Text
+			sources[j] = c.Source
 		}
 
 		vecs, err := e.embedder.EmbedBatch(texts)
@@ -458,15 +460,24 @@ func (e *Engine) embedPhase(topic string, chunks []ingestion.SourceChunk) {
 			continue
 		}
 
+		// Classify semantic domains for this batch
+		domains := ingestion.ClassifyDomainBatch(texts, sources, e.fast)
+
 		for j, vec := range vecs {
 			chunkID := fmt.Sprintf("%s_%s_%d", e.runID, slugify(topic), i+j)
+			domain := ingestion.DomainResult{}
+			if j < len(domains) {
+				domain = domains[j]
+			}
 			_ = e.qdrant.StoreChunk(&store.Chunk{
-				ID:     chunkID,
-				Text:   batch[j].Text,
-				Source: batch[j].Source,
-				Topic:  topic,
-				RunID:  e.runID,
-				Vector: vec,
+				ID:               chunkID,
+				Text:             batch[j].Text,
+				Source:           batch[j].Source,
+				RunTopic:         topic,
+				SemanticDomain:   domain.Domain,
+				DomainConfidence: domain.Confidence,
+				RunID:            e.runID,
+				Vector:           vec,
 			})
 		}
 	}
@@ -769,7 +780,7 @@ func (e *Engine) crawlCitations(topic string) {
 			chunks = append(chunks, ingestion.SourceChunk{
 				Text:   text,
 				Source: l.Paper.URL,
-				Topic:  topic,
+				RunTopic: topic,
 			})
 		}
 
@@ -786,7 +797,7 @@ func (e *Engine) crawlCitations(topic string) {
 				chunks = append(chunks, ingestion.SourceChunk{
 					Text:   text,
 					Source: p.URL,
-					Topic:  topic,
+					RunTopic: topic,
 				})
 			}
 		}

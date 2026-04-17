@@ -50,7 +50,7 @@ Config lives at `kae-lens/config/lens.yaml`.
 
 | Collection | ID type | Purpose |
 |---|---|---|
-| `kae_chunks` | uint64 numeric | Knowledge base — KAE writes, Lens reads |
+| `kae_chunks` | uint64 numeric | Knowledge base — KAE writes, Lens reads. Payload: `text`, `source`, `run_topic`, `semantic_domain`, `domain_confidence`, `run_id` |
 | `kae_nodes` | uint64 numeric | Per-run concept nodes with weights and anomaly flags |
 | `kae_meta_graph` | uint64 numeric | Persistent cross-run concept graph (Tier 2) |
 | `kae_lens_findings` | UUID | Lens output findings |
