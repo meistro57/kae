@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"os"
 	"strings"
+
+	"github.com/meistro57/kae/internal/llm"
 )
 
 type GutenbergBook struct {
@@ -24,113 +26,161 @@ type gutendexBook struct {
 	Formats map[string]string `json:"formats"`
 }
 
-// KAEBookList — verified correct Gutenberg IDs
+// BlacklistEntry represents a contaminated book entry
+type BlacklistEntry struct {
+	Title          string `json:"title"`
+	Reason         string `json:"reason"`
+	DetectionDate  string `json:"detection_date"`
+}
+
+// GutenbergBlacklist structure
+type GutenbergBlacklist struct {
+	Version           string           `json:"version"`
+	GeneratedAt       string           `json:"generated_at"`
+	Reason            string           `json:"reason"`
+	BlacklistedTitles []BlacklistEntry `json:"blacklisted_titles"`
+}
+
+var cachedBlacklist *GutenbergBlacklist
+
+// loadBlacklist loads the Gutenberg blacklist from file
+func loadBlacklist() (*GutenbergBlacklist, error) {
+	if cachedBlacklist != nil {
+		return cachedBlacklist, nil
+	}
+
+	f, err := os.Open("gutenberg_blacklist.json")
+	if err != nil {
+		// Blacklist file doesn't exist - return empty blacklist
+		if os.IsNotExist(err) {
+			return &GutenbergBlacklist{BlacklistedTitles: []BlacklistEntry{}}, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+
+	var blacklist GutenbergBlacklist
+	if err := json.NewDecoder(f).Decode(&blacklist); err != nil {
+		return nil, fmt.Errorf("parsing gutenberg_blacklist.json: %w", err)
+	}
+
+	cachedBlacklist = &blacklist
+	return &blacklist, nil
+}
+
+// isBlacklisted checks if a book title is in the blacklist
+func isBlacklisted(title string) (bool, string) {
+	blacklist, err := loadBlacklist()
+	if err != nil {
+		// If we can't load blacklist, don't block ingestion
+		fmt.Printf("Warning: failed to load blacklist: %v\n", err)
+		return false, ""
+	}
+
+	for _, entry := range blacklist.BlacklistedTitles {
+		if entry.Title == title {
+			return true, entry.Reason
+		}
+	}
+	return false, ""
+}
+
+// KAEBookList — curated Gutenberg texts for knowledge archaeology
 var KAEBookList = []struct {
 	ID    int
 	Title string
 }{
 	{55201, "The Republic - Plato"},
-	{1572, "Timaeus - Plato"},                 // Plato's cosmology
-	{14209, "The Kybalion - Three Initiates"}, // Hermetic philosophy
+	{1572, "Timaeus - Plato"},
+	{14209, "The Kybalion - Three Initiates"},
 	{2680, "Meditations - Marcus Aurelius"},
 	{3438, "Ecclesiastes"},
 	{6748, "The Book of Enoch"},
 	{2411, "The Yoga Sutras of Patanjali"},
 	{48926, "The Upanishads"},
 	{45977, "The Emerald Tablet"},
-	{1396, "Phaedo - Plato"}, // Soul and immortality
+	{1396, "Phaedo - Plato"},
 	{1656, "The Symposium - Plato"},
 	{3207, "Tao Te Ching - Lao Tzu"},
 }
 
-// BooksForTopic returns relevant books for a topic
-func BooksForTopic(topic string) []struct {
+// BooksForTopic uses LLM to select relevant books from the catalog
+func BooksForTopic(topic string, llmProvider llm.Provider) []struct {
 	ID    int
 	Title string
 } {
-	topic = strings.ToLower(topic)
-
-	keywords := map[string][]int{
-		"cosmolog":  {1572, 14209, 55201, 6748},
-		"conscious": {2411, 48926, 2680, 1396},
-		"ancient":   {1572, 6748, 48926, 14209, 3207},
-		"philosoph": {55201, 1396, 1656, 2680, 1572},
-		"hermeti":   {14209, 45977},
-		"vedic":     {48926, 2411},
-		"quantum":   {14209, 48926, 2680},
-		"void":      {48926, 1572, 6748, 3207},
-		"soul":      {1396, 48926, 2411, 6748},
-		"reincarn":  {1396, 48926, 2411, 55201},
-		"mana":      {14209, 48926, 3207},
-		"observer":  {2680, 14209, 48926},
-		"tao":       {3207, 14209},
-		"enoch":     {6748},
-		"firmament": {6748, 1572, 3438},
-	}
-
-	type scoredBook struct {
-		ID    int
-		Score int
-	}
-
-	scoreByID := make(map[int]int)
-	for keyword, ids := range keywords {
-		if strings.Contains(topic, keyword) {
-			for rank, id := range ids {
-				// Higher-ranked ids in a keyword list get a stronger signal.
-				scoreByID[id] += len(ids) - rank
-			}
-		}
-	}
-
-	if len(scoreByID) == 0 {
-		// Default: Kybalion + Meditations — good general sources
-		return []struct {
-			ID    int
-			Title string
-		}{
-			KAEBookList[2],
-			KAEBookList[3],
-		}
-	}
-
-	positionByID := make(map[int]int, len(KAEBookList))
+	// Build book list for LLM
+	var bookDescriptions strings.Builder
 	for i, book := range KAEBookList {
-		positionByID[book.ID] = i
+		bookDescriptions.WriteString(fmt.Sprintf("%d. %s\n", i, book.Title))
 	}
 
-	scored := make([]scoredBook, 0, len(scoreByID))
-	for id, score := range scoreByID {
-		scored = append(scored, scoredBook{ID: id, Score: score})
-	}
+	prompt := fmt.Sprintf(`You are selecting relevant ancient/philosophical texts for knowledge archaeology.
 
-	sort.Slice(scored, func(i, j int) bool {
-		if scored[i].Score == scored[j].Score {
-			return positionByID[scored[i].ID] < positionByID[scored[j].ID]
+TOPIC: %s
+
+AVAILABLE TEXTS:
+%s
+
+Return ONLY a JSON array of indices (0-based) for relevant texts. Maximum 3 texts.
+If NO texts are relevant, return empty array [].
+
+Examples:
+- Topic "consciousness" → [3,6,7] (Meditations, Yoga Sutras, Upanishads)
+- Topic "Pope" → [] (no relevant ancient texts)
+- Topic "cosmology" → [1,2,5] (Timaeus, Kybalion, Enoch)
+
+Return ONLY valid JSON array of numbers. No explanation.`, topic, bookDescriptions.String())
+
+	// Collect stream into string
+	var response strings.Builder
+	for chunk := range llmProvider.Stream("", []llm.Message{{Role: "user", Content: prompt}}) {
+		if chunk.Type == llm.ChunkText {
+			response.WriteString(chunk.Text)
 		}
-		return scored[i].Score > scored[j].Score
-	})
+	}
 
-	relevant := make([]struct {
+	// Parse JSON array
+	responseText := strings.TrimSpace(response.String())
+	var indices []int
+	if err := json.Unmarshal([]byte(responseText), &indices); err != nil {
+		// Fallback: no books if parse fails
+		return nil
+	}
+
+	// Validate and collect books, filtering out blacklisted titles
+	var selected []struct {
 		ID    int
 		Title string
-	}, 0, 3)
-	for _, candidate := range scored {
-		for _, book := range KAEBookList {
-			if book.ID == candidate.ID {
-				relevant = append(relevant, book)
-				break
+	}
+
+	for _, idx := range indices {
+		if idx >= 0 && idx < len(KAEBookList) {
+			book := KAEBookList[idx]
+			
+			// Check blacklist
+			if blacklisted, reason := isBlacklisted(book.Title); blacklisted {
+				fmt.Printf("⚠️  BLACKLIST: Skipping '%s' - %s\n", book.Title, reason)
+				continue
 			}
+			
+			selected = append(selected, book)
 		}
-		if len(relevant) == 3 {
+		// Limit to 3
+		if len(selected) >= 3 {
 			break
 		}
 	}
 
-	return relevant
+	return selected
 }
 
 func GutenbergFetch(bookID int, title string) (*GutenbergBook, error) {
+	// Check blacklist before fetching
+	if blacklisted, reason := isBlacklisted(title); blacklisted {
+		return nil, fmt.Errorf("book '%s' is blacklisted: %s", title, reason)
+	}
+
 	// Ask gutendex for the book metadata so we get the real text URL from formats.
 	apiURL := fmt.Sprintf("https://gutendex.com/books/%d/", bookID)
 	resp, err := http.Get(apiURL)

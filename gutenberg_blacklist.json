@@ -1,0 +1,37 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-04-17T19:17:35.123456",
+  "reason": "Books with systematic title-content mismatches detected by KAE Lens",
+  "blacklisted_titles": [
+    {
+      "title": "Ecclesiastes",
+      "reason": "Title-content mismatch detected in Project Gutenberg",
+      "detection_date": "2026-04-17T19:17:35.123456"
+    },
+    {
+      "title": "Phaedo - Plato",
+      "reason": "Title-content mismatch detected in Project Gutenberg",
+      "detection_date": "2026-04-17T19:17:35.123456"
+    },
+    {
+      "title": "Tao Te Ching - Lao Tzu",
+      "reason": "Title-content mismatch detected in Project Gutenberg",
+      "detection_date": "2026-04-17T19:17:35.123456"
+    },
+    {
+      "title": "The Book of Enoch",
+      "reason": "Title-content mismatch detected in Project Gutenberg",
+      "detection_date": "2026-04-17T19:17:35.123456"
+    },
+    {
+      "title": "The Upanishads",
+      "reason": "Title-content mismatch detected in Project Gutenberg",
+      "detection_date": "2026-04-17T19:17:35.123456"
+    },
+    {
+      "title": "The Yoga Sutras of Patanjali",
+      "reason": "Title-content mismatch detected in Project Gutenberg",
+      "detection_date": "2026-04-17T19:17:35.123456"
+    }
+  ]
+}

@@ -509,7 +509,7 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 - [x] **Domain contamination fix** — `kae_chunks` now stores `run_topic` (what the run was exploring) separately from `semantic_domain` (what the chunk is actually about); each embed batch is LLM-classified via `ClassifyDomainBatch`; migrate existing chunks with `go run ./scripts/migrate_domains [--dry-run]`
 
 ### Tier 2 — Knowledge Graph Intelligence (complete)
-- [x] **Persistent meta-graph** (`kae_meta_graph`) — cross-run concept aggregation with attractor detection
+- [x] **Persistent meta-graph** (`kae_meta_graph`) — cross-run concept aggregation with attractor detection; update runs synchronously after each run and reports merged/new concept counts
 - [x] **Citation chain excavation** — BFS over Semantic Scholar citation graph; suppressed lineage detection; wired into score phase — automatically fires on high-anomaly concepts and queues results for the next ingest cycle
 - [x] **Domain boundary detection** — bridge concepts (cross-domain connectors) and moats (isolated domain pairs)
 

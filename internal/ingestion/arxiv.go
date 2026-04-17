@@ -24,7 +24,7 @@ type ArxivPaper struct {
 // ArxivSearch fetches papers related to a topic
 func ArxivSearch(topic string, maxResults int) ([]*ArxivPaper, error) {
 	params := url.Values{
-		"search_query": {fmt.Sprintf("all:%s", topic)},
+		"search_query": {fmt.Sprintf("all:%s", quoteIfNeeded(topic))},
 		"start":        {"0"},
 		"max_results":  {fmt.Sprintf("%d", maxResults)},
 		"sortBy":       {"relevance"},
@@ -51,7 +51,7 @@ func ArxivSearchMulti(topic string, categories []string, maxPerCat int) ([]*Arxi
 	seen := make(map[string]bool)
 
 	for _, cat := range categories {
-		query := fmt.Sprintf("cat:%s AND all:%s", cat, topic)
+		query := fmt.Sprintf("cat:%s AND all:%s", cat, quoteIfNeeded(topic))
 		params := url.Values{
 			"search_query": {query},
 			"start":        {"0"},

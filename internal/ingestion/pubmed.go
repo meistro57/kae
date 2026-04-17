@@ -46,7 +46,7 @@ func PubMedSearch(topic string, limit int) ([]*PubMedAbstract, error) {
 func pubmedSearchIDs(topic string, limit int) ([]string, error) {
 	params := url.Values{
 		"db":      {"pubmed"},
-		"term":    {topic},
+		"term":    {quoteIfNeeded(topic)},
 		"retmax":  {fmt.Sprintf("%d", limit)},
 		"retmode": {"json"},
 		"sort":    {"relevance"},

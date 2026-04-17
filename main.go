@@ -197,7 +197,14 @@ func main() {
 		saveReport(eng)
 		saveGraph(eng, cfg.SaveGraphPath)
 		if !*noMetaGraph {
-			go mergeMetaGraph(eng.RunID(), cfg.QdrantURL, *attractorMinRuns)
+			fmt.Fprintln(os.Stderr, "Updating meta-graph...")
+			qdrant := store.NewClient(cfg.QdrantURL)
+			merged, created, err := metagraph.MergeRun(qdrant, eng.RunID(), *attractorMinRuns)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "meta-graph merge error: %v\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "✅ Meta-graph updated: %d merged, %d new concepts\n", merged, created)
+			}
 		}
 
 		if *autoRestart && eng.StoppedByStagnation() {

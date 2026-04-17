@@ -63,7 +63,7 @@ if [ -n "$FINDINGS" ] && [ "$FINDINGS" -gt 0 ]; then
     curl -s "$QDRANT/collections/kae_lens_findings/points/scroll" \
         -H "Content-Type: application/json" \
         -d '{"limit":5,"with_payload":true,"order_by":{"key":"created_at","direction":"desc"}}' \
-        2>/dev/null | jq -r '.result.points[]? | "  • \(.payload.type.string_value) (confidence: \(.payload.confidence.double_value | tonumber | . * 100 | round / 100))"' \
+        2>/dev/null | jq -r '.result.points[]? | "  • \(.payload.type // "finding") (confidence: \((.payload.confidence // 0) | . * 100 | round / 100))"' \
         || echo "  (Unable to fetch)"
 fi
 

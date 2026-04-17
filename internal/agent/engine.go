@@ -307,7 +307,7 @@ doneDrain:
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		relevant := ingestion.BooksForTopic(topic)
+		relevant := ingestion.BooksForTopic(topic, e.fast)
 		var books []*ingestion.GutenbergBook
 		for _, b := range relevant {
 			book, err := ingestion.GutenbergFetch(b.ID, b.Title)
