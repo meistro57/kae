@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-PORT=${1:-8080}
+PORT=${1:-5150}
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 URL="http://localhost:$PORT/kae-3d-viewer.html"
 

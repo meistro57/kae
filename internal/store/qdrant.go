@@ -377,7 +377,7 @@ func (c *Client) FindSimilarMetaNode(vector []float32, threshold float64) (*Meta
 		"vector":       vector,
 		"limit":        1,
 		"with_payload": true,
-		"with_vector":  false,
+		"with_vector":  true,
 	}
 
 	data, err := c.post(fmt.Sprintf("/collections/%s/points/search", CollectionMetaGraph), body)
@@ -390,6 +390,7 @@ func (c *Client) FindSimilarMetaNode(vector []float32, threshold float64) (*Meta
 			ID      any            `json:"id"`
 			Score   float64        `json:"score"`
 			Payload map[string]any `json:"payload"`
+			Vector  []float32      `json:"vector"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(data, &result); err != nil {
@@ -402,6 +403,7 @@ func (c *Client) FindSimilarMetaNode(vector []float32, threshold float64) (*Meta
 
 	r := result.Result[0]
 	mn := metaNodeFromPayload(fmt.Sprintf("%v", r.ID), r.Payload)
+	mn.Vector = r.Vector
 	return mn, nil
 }
 

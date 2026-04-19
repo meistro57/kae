@@ -41,6 +41,12 @@ KAE LENS
 KAE ANALYZER
  └── CLI for post-run inspection: runs, anomalies, convergence, search, export
 
+KAE FORENSICS
+ └── scans any Qdrant collection for data quality anomalies
+ └── detects missing payload fields and zero-magnitude (un-embedded) vectors
+ └── repairs in place: re-embeds via OpenAI and upserts corrected vectors
+ └── dry-run by default; --repair to apply fixes
+
 KAE MCP SERVER
  └── exposes KAE + Qdrant to any MCP-compatible AI assistant
 ```
@@ -294,6 +300,26 @@ kae-analyzer export                                  # Export analysis to JSON
 
 ---
 
+## KAE Forensics
+
+A data quality tool for auditing and repairing Qdrant collections — catches points with missing payload fields or zero-magnitude vectors (never embedded) and fixes them in place.
+
+```bash
+cd kae-forensics
+go build -o kae-forensics .
+
+./kae-forensics           # dry-run: scan and report anomalies
+./kae-forensics --repair  # re-embed and upsert corrected vectors
+```
+
+Checks performed:
+- **Weak vector** — magnitude < 0.01 (un-embedded or corrupted); repaired by re-embedding the `document` payload via OpenAI `text-embedding-3-small`
+- **Missing `source_material`** — payload field absent; flagged for review
+
+Requires `OPENAI_API_KEY` when running with `--repair`. The collection name and gRPC address are configured at the top of `main.go`.
+
+---
+
 ## KAE MCP Server
 
 Exposes KAE and Qdrant to any MCP-compatible AI assistant (Claude, Cursor, etc.).
@@ -377,6 +403,8 @@ kae/
 │   └── collections/             # Qdrant payload schemas
 ├── kae-analyzer/                # Post-run analysis CLI
 │   └── main.go                  # runs, analyze, compare, anomalies, search, convergence, export
+├── kae-forensics/               # Data quality auditor and repair tool
+│   └── main.go                  # Scans for weak vectors / missing fields; --repair re-embeds in place
 └── mcp/                         # MCP server for AI assistant integration
     └── main.go                  # JSON-RPC over stdio — 8 tools
 ```

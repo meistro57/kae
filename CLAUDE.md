@@ -10,6 +10,7 @@ Four independent Go modules in one repo:
 | `kae-lens/` | `github.com/meistro/kae` | `./kae-lens/lens` | Lens synthesis agent (reasoning, findings, corrections) |
 | `mcp/` | standalone | `./mcp/kae_mcp` | MCP server exposing KAE/Qdrant tools to Claude |
 | `kae-analyzer/` | standalone | `./kae-analyzer/kae-analyzer` | CLI for post-run inspection |
+| `kae-forensics/` | standalone | `./kae-forensics/kae-forensics` | Data quality auditor — scans for weak vectors, repairs via re-embed |
 
 ## Build
 
