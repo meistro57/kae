@@ -964,7 +964,7 @@ func handleRequest(req JSONRPCRequest) JSONRPCResponse {
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Result: map[string]any{
-				"protocolVersion": "2024-11-05",
+				"protocolVersion": "2025-11-05",
 				"capabilities":    map[string]any{"tools": map[string]any{}},
 				"serverInfo":      map[string]any{"name": "kae_qdrant_mcp", "version": "1.0.0"},
 			},
