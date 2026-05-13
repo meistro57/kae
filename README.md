@@ -1,4 +1,5 @@
 # 🧠 Knowledge Archaeology Engine (KAE)
+<img width="628" height="641" alt="image" src="https://github.com/user-attachments/assets/846e587b-9388-4ced-9953-4e0b4b43c434" />
 
 > *An autonomous agent that ingests human knowledge, follows contradictions without flinching, and builds a model of what the data actually points to — not what consensus says.*
 
