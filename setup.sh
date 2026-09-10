@@ -6,7 +6,7 @@ set -euo pipefail
 
 QDRANT_CONTAINER="kae-qdrant"
 QDRANT_PORT=6333
-QDRANT_IMAGE="qdrant/qdrant:v1.17.1"
+QDRANT_IMAGE="qdrant/qdrant:v1.19.1"
 
 echo "==> Checking dependencies..."
 
@@ -53,6 +53,7 @@ else
       --name "${QDRANT_CONTAINER}" \
       --restart unless-stopped \
       -p "${QDRANT_PORT}:6333" \
+      -p "6334:6334" \
       -v kae-qdrant-data:/qdrant/storage \
       "${QDRANT_IMAGE}"
   fi
