@@ -239,18 +239,6 @@ func extractVector(vo *qdrant.VectorsOutput) []float32 {
 	return nil
 }
 
-// stringFromMap returns the first non-empty string value for the given keys.
-func stringFromMap(m map[string]any, keys ...string) string {
-	for _, k := range keys {
-		if v, ok := m[k]; ok {
-			if s, ok := v.(string); ok && s != "" {
-				return s
-			}
-		}
-	}
-	return ""
-}
-
 func (r *Reasoner) emit(event any) {
 	select {
 	case r.events <- event:
@@ -264,18 +252,7 @@ func (r *Reasoner) emit(event any) {
 func toNeighborSummaries(points []*qdrant.ScoredPoint) []neighborSummary {
 	summaries := make([]neighborSummary, 0, len(points))
 	for _, p := range points {
-		payload := qdrantclient.PayloadToMap(p.Payload)
-		content := stringFromMap(payload, "content", "text")
-		if len(content) > 400 {
-			content = content[:400] + "..."
-		}
-		summaries = append(summaries, neighborSummary{
-			ID:      qdrantclient.PointIDStr(p.Id),
-			Score:   p.Score,
-			Title:   stringFromMap(payload, "title", "source"),
-			Domain:  stringFromMap(payload, "domain", "semantic_domain", "topic"),
-			Content: content,
-		})
+		summaries = append(summaries, neighborSummaryFromPoint(p))
 	}
 	return summaries
 }
