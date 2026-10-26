@@ -90,7 +90,7 @@ KAE supports five backends via a unified `provider:model` syntax:
 # Clone or copy the project
 cd kae
 
-# Run the setup script — installs Go deps, builds binary, starts Qdrant v1.17.1 via Docker
+# Run the setup script — installs Go deps, builds binary, starts Qdrant v1.19.1 via Docker
 ./setup.sh
 
 # Copy the generated .env and fill in your keys
@@ -352,7 +352,7 @@ go build -o kae-mcp .
 kae/
 ├── main.go                      # Entry point, CLI flags
 ├── go.mod                       # Dependencies
-├── setup.sh                     # Start Qdrant (v1.17.1) + build binary
+├── setup.sh                     # Start Qdrant (v1.19.1) + build binary
 ├── internal/
 │   ├── config/
 │   │   └── config.go            # Config loader (env vars + .env) — all provider keys
@@ -490,7 +490,7 @@ All sources run in parallel each cycle. CORE is silently skipped if the key is a
 
 | Setting | Detail |
 |---------|--------|
-| Version | `qdrant/qdrant:v1.17.1` (pinned) |
+| Version | `qdrant/qdrant:v1.19.1` (pinned) |
 | Collections | `kae_chunks` (text chunks), `kae_nodes` (graph), `kae_meta_graph` (cross-run meta-graph), `kae_lens_findings` (Lens findings) |
 | Distance | Cosine |
 | Payload indexes | `domain`, `label` (keyword, created before HNSW builds) |
@@ -502,8 +502,30 @@ All sources run in parallel each cycle. CORE is silently skipped if the key is a
 | Embedding (configured) | Any OpenAI-compatible endpoint — default `text-embedding-3-small` (1536-dim) |
 | Memory isolation | Each run searches only its own chunks by default — use `--shared` to search across all runs |
 | Network access | Binds to `0.0.0.0:6333` — accessible on LAN by default |
+| Persisted path | `/qdrant/storage` only (named volume `kae-qdrant-data`) |
 
 Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with no degradation to the core loop.
+
+### Upgrading Qdrant
+
+Storage compatibility is guaranteed for **one minor version only**, and Qdrant cannot be
+downgraded. To cross more than one minor, step through them one at a time.
+
+Back up the volume before recreating the container. Qdrant's mmap files are sparse
+(24.6 GB of real blocks vs 39.1 GB apparent), so use GNU `tar -cS`; BusyBox `tar` writes the
+holes out in full. `--log-driver none` matters — without it Docker's json-file driver
+duplicates the whole stream into `/var/lib/docker` and can fill the host disk:
+
+```bash
+docker run --rm --log-driver none \
+  -v kae-qdrant-data:/src:ro -v /path/to/backups:/dst \
+  debian:stable-slim tar -cSf /dst/kae-qdrant-data.tar -C /src .
+```
+
+> **Snapshots are not persisted.** Qdrant writes them to `/qdrant/snapshots`, which is *not*
+> volume-mounted, so they live in the container's writable layer and are destroyed by any
+> `docker rm` — including every version upgrade. Copy anything you need off first, or mount a
+> volume at `/qdrant/snapshots`.
 
 ---
 
@@ -564,4 +586,4 @@ Qdrant is fully optional. If unavailable, the agent runs entirely in-memory with
 
 ---
 
-*KAE v1.0 — Built in WSL2 | Go | OpenRouter · Anthropic · OpenAI · Gemini · Ollama | Qdrant v1.17.1 | Pure curiosity*
+*KAE v1.0 — Built in WSL2 | Go | OpenRouter · Anthropic · OpenAI · Gemini · Ollama | Qdrant v1.19.1 | Pure curiosity*

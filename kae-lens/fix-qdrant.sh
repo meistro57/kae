@@ -46,7 +46,7 @@ else
         -p 6333:6333 \
         -p 6334:6334 \
         -v $(pwd)/qdrant_storage:/qdrant/storage:z \
-        qdrant/qdrant:v1.17.1
+        qdrant/qdrant:v1.19.1
     
     echo "Waiting for Qdrant to start..."
     sleep 5

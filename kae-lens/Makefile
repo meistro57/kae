@@ -47,7 +47,7 @@ qdrant-up:
 		-p 6333:6333 \
 		-p 6334:6334 \
 		-v $(PWD)/qdrant_storage:/qdrant/storage:z \
-		qdrant/qdrant
+		qdrant/qdrant:v1.19.1
 	@echo "✓ Qdrant running at http://localhost:6333/dashboard"
 
 qdrant-down:

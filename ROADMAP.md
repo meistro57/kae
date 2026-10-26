@@ -1790,7 +1790,7 @@ kae run --mode ensemble --cycles 50
 version: '3.8'
 services:
   qdrant:
-    image: qdrant/qdrant
+    image: qdrant/qdrant:v1.19.1
     ports:
       - "6333:6333"
     volumes:
