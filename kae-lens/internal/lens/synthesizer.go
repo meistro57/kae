@@ -11,7 +11,6 @@ import (
 	"github.com/meistro/kae/collections"
 	"github.com/meistro/kae/internal/config"
 	"github.com/meistro/kae/internal/llm"
-	qdrantclient "github.com/meistro/kae/internal/qdrantclient"
 	"github.com/qdrant/go-client/qdrant"
 )
 
@@ -66,30 +65,10 @@ func (s *Synthesizer) Synthesize(
 
 	neighborSummaries := make([]neighborSummary, 0, len(neighbors))
 	for _, n := range neighbors {
-		payload := qdrantclient.PayloadToMap(n.Payload)
-		ns := neighborSummary{
-			ID:     qdrantclient.PointIDStr(n.Id),
-			Score:  n.Score,
-			Title:  stringField(payload, "title"),
-			Domain: stringField(payload, "domain"),
+		ns := neighborSummaryFromPoint(n)
+		if ns.URL != "" {
+			allURLs[ns.ID] = ns.URL
 		}
-		// Truncate content for prompt efficiency
-		content := stringField(payload, "content")
-		if len(content) > 400 {
-			content = content[:400] + "..."
-		}
-		ns.Content = content
-
-		// Extract source URL (kae_knowledge has 'url'; kae_chunks stores URL in 'source')
-		srcURL := stringField(payload, "url")
-		if srcURL == "" {
-			srcURL = stringField(payload, "source")
-		}
-		if strings.HasPrefix(srcURL, "http://") || strings.HasPrefix(srcURL, "https://") {
-			ns.URL = srcURL
-			allURLs[ns.ID] = srcURL
-		}
-
 		neighborSummaries = append(neighborSummaries, ns)
 	}
 
@@ -371,15 +350,6 @@ func (s *Synthesizer) parseFindings(response string) ([]rawFinding, error) {
 }
 
 // --- helpers ---
-
-func stringField(m map[string]any, key string) string {
-	v, ok := m[key]
-	if !ok {
-		return ""
-	}
-	s, _ := v.(string)
-	return s
-}
 
 func isValidFindingType(t string) bool {
 	switch collections.FindingType(t) {
