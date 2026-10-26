@@ -19,9 +19,9 @@ import (
 
 func main() {
 	// ── Core flags ─────────────────────────────────────────────────────────────
-	model := flag.String("model", "deepseek/deepseek-r1",
+	model := flag.String("model", "deepseek/deepseek-v4-pro",
 		`Primary reasoning model.  Accepts "provider:model" syntax:
-  openrouter:deepseek/deepseek-r1   (default)
+  openrouter:deepseek/deepseek-v4-pro   (default)
   anthropic:claude-opus-4-6
   openai:gpt-4o
   gemini:gemini-2.5-flash

@@ -28,7 +28,7 @@ density:
     dense_max: 200
 
 llm:
-  reasoning_model: "deepseek/deepseek-r1"
+  reasoning_model: "deepseek/deepseek-v4-pro"
   fast_model: "google/gemini-2.5-flash"
   openrouter_base_url: "https://openrouter.ai/api/v1"
   openrouter_api_key: ""

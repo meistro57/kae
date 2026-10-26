@@ -213,7 +213,7 @@ See `config/lens.yaml` — all fields documented inline. Key settings:
 | `watcher.poll_interval_seconds` | 60 | How often to check for new points |
 | `watcher.batch_size` | 10 | Points per reasoning batch |
 | `watcher.max_concurrent_batches` | 3 | Max batches processing simultaneously |
-| `llm.reasoning_model` | `deepseek/deepseek-r1` | Model for deep reasoning passes |
+| `llm.reasoning_model` | `deepseek/deepseek-v4-pro` | Model for deep reasoning passes |
 | `llm.fast_model` | `google/gemini-2.5-flash` | Model for lighter batches and corrections |
 | `llm.min_confidence` | 0.60 | Minimum finding confidence threshold |
 | `llm.llm_timeout_seconds` | 120 | Per-call LLM timeout — prevents a hung call from canceling the batch |

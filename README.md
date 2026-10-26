@@ -446,14 +446,14 @@ KAE uses two model roles, each configurable with `provider:model` syntax:
 
 | Role | Default | Purpose |
 |---|---|---|
-| **Brain** (`--model`) | `deepseek/deepseek-r1` | Deep reasoning, visible `<think>` blocks, connection-making |
+| **Brain** (`--model`) | `deepseek/deepseek-v4-pro` | Deep reasoning, visible `<think>` blocks, connection-making |
 | **Fast** (`--fast`) | `google/gemini-2.5-flash` | Bulk passes, seed selection |
 
 Examples:
 
 ```bash
 # OpenRouter (default — bare name works)
---model "deepseek/deepseek-r1"
+--model "deepseek/deepseek-v4-pro"
 
 # Anthropic native API with adaptive thinking
 --model "anthropic:claude-opus-4-6"

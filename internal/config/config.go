@@ -62,7 +62,7 @@ func Load() (*Config, error) {
 		OpenAIKey:       os.Getenv("OPENAI_API_KEY"),
 		GeminiKey:       os.Getenv("GEMINI_API_KEY"),
 		OllamaURL:       os.Getenv("OLLAMA_URL"),
-		Model:           "deepseek/deepseek-r1",
+		Model:           "deepseek/deepseek-v4-pro",
 		FastModel:       "google/gemini-2.5-flash",
 		QdrantURL:       envOr("QDRANT_URL", "http://localhost:6333"),
 		EmbeddingsURL:   os.Getenv("EMBEDDINGS_URL"),

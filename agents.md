@@ -18,7 +18,7 @@ seed → [ ingest → think → connect → anomaly scan → report ] × N cycle
 
 | Role | Default | Flag | Purpose |
 |------|---------|------|---------|
-| **brain** | `deepseek/deepseek-r1` | `-model` | Deep reasoning, connection finding, anomaly detection |
+| **brain** | `deepseek/deepseek-v4-pro` | `-model` | Deep reasoning, connection finding, anomaly detection |
 | **fast** | `google/gemini-2.5-flash` | `-fast` | Bulk ingestion summaries and supplementation |
 
 Both route through OpenRouter (`OPENROUTER_API_KEY`).
