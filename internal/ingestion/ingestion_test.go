@@ -3,7 +3,10 @@ package ingestion
 import (
 	"strings"
 	"testing"
+
 )
+
+
 
 func TestParseArxivFeedParsesEntries(t *testing.T) {
 	t.Parallel()
@@ -55,7 +58,7 @@ func TestParseArxivFeedRejectsInvalidXML(t *testing.T) {
 func TestBooksForTopicReturnsRelevantMatches(t *testing.T) {
 	t.Parallel()
 
-	books := BooksForTopic("quantum consciousness")
+	books := BooksForTopic("quantum consciousness", &mockProvider{response: "[2,3,7]"})
 	if len(books) == 0 {
 		t.Fatal("expected relevant books for topic")
 	}
@@ -97,12 +100,9 @@ func TestBooksForTopicReturnsRelevantMatches(t *testing.T) {
 func TestBooksForTopicFallsBackToDefault(t *testing.T) {
 	t.Parallel()
 
-	books := BooksForTopic("utterly unrelated topic")
-	if len(books) != 2 {
-		t.Fatalf("expected 2 default books, got %d", len(books))
-	}
-	if books[0].ID != KAEBookList[2].ID || books[1].ID != KAEBookList[3].ID {
-		t.Fatalf("expected default first two books, got %+v", books)
+	books := BooksForTopic("utterly unrelated topic", &mockProvider{response: "[]"})
+	if len(books) != 0 {
+		t.Fatalf("expected no books for empty LLM selection, got %d", len(books))
 	}
 }
 
